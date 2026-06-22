@@ -184,39 +184,14 @@ $fecha_min_volver_llamar = (new DateTimeImmutable('now', new DateTimeZone('Ameri
                             <label><i class="fas fa-handshake"></i> Datos del acuerdo de pago total:</label>
                             <div style="display: flex; flex-direction: column; gap: 10px;">
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <label style="min-width: 140px; margin: 0;">Saldo a pagar:</label>
-                                    <div style="position: relative; flex: 1;">
-                                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #666; font-weight: 600;">$</span>
-                                        <input type="text" id="saldo-a-pagar" placeholder="0" style="width: 100%; padding: 8px 8px 8px 30px; border: 1px solid #ddd; border-radius: 4px;" inputmode="numeric">
-                                    </div>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <label style="min-width: 140px; margin: 0;">Descuento Aplicado:</label>
-                                    <div style="flex: 1; display: flex; gap: 8px;">
-                                        <div style="position: relative; flex: 1;">
-                                            <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #666; font-weight: 600;">$</span>
-                                            <input type="text" id="descuento-monto" placeholder="Monto" style="width: 100%; padding: 8px 8px 8px 30px; border: 1px solid #ddd; border-radius: 4px;" inputmode="numeric">
-                                        </div>
-                                        <span style="align-self: center; color: #666;">o</span>
-                                        <div style="position: relative; flex: 1;">
-                                            <input type="text" id="descuento-porcentaje" placeholder="%" style="width: 100%; padding: 8px 30px 8px 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" inputmode="numeric">
-                                            <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: #666; font-weight: 600; pointer-events: none;">%</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <label style="min-width: 140px; margin: 0;">Total a Pagar:</label>
+                                    <label style="min-width: 140px; margin: 0;">Total a pagar:</label>
                                     <div style="position: relative; flex: 1;">
                                         <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #28a745; font-weight: 700;">$</span>
-                                        <input type="text" id="total-a-pagar-acuerdo" placeholder="0" readonly style="width: 100%; padding: 8px 8px 8px 30px; border: 2px solid #28a745; border-radius: 4px; background: #f8f9fa; font-weight: 600; color: #28a745;">
+                                        <input type="text" id="total-a-pagar-acuerdo" placeholder="0" style="width: 100%; padding: 8px 8px 8px 30px; border: 2px solid #28a745; border-radius: 4px; font-weight: 600; color: #28a745;" inputmode="numeric">
                                     </div>
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <label style="min-width: 140px; margin: 0;">Fecha Límite:</label>
-                                    <input type="date" id="fecha-limite-acuerdo" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" min="">
-                                </div>
                             </div>
-                            <p class="texto-ayuda-acuerdo-total" style="margin: 8px 0 0; font-size: 12px; color: #666;">Pago único en corto plazo. El total se calcula automáticamente aplicando el descuento.</p>
+                            <p class="texto-ayuda-acuerdo-total" style="margin: 8px 0 0; font-size: 12px; color: #666;">Indique el monto total acordado con el cliente.</p>
                         </div>
                         
                         <!-- Cuotas manuales para ACUERDO A LARGO PLAZO -->

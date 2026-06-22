@@ -1765,6 +1765,13 @@ function verClientesBase(baseId, baseNombre) {
     window._modalVerClientesBaseId = baseId;
     window._modalVerClientesBaseNombre = baseNombre;
 
+    const inputBusqueda = document.getElementById('modal-ver-clientes-busqueda');
+    if (inputBusqueda) {
+        inputBusqueda.value = '';
+    }
+    _clientesModalBusquedaServidorActiva = false;
+    clearTimeout(_busquedaClientesModalTimeout);
+
     // Cargar clientes (con límite en servidor para bases grandes; total indica tamaño real)
     fetch(`index.php?action=obtener_clientes_base&base_id=${baseId}`)
         .then(response => {
@@ -2335,7 +2342,8 @@ function cerrarModalVerAsesores() {
 // Lista completa de clientes del modal "Ver clientes" (para filtrar sin volver a pedir al servidor)
 let _clientesModalVerClientes = [];
 
-function mostrarClientesEnModal(clientes, baseNombre, totalEnBase) {
+function mostrarClientesEnModal(clientes, baseNombre, totalEnBase, opciones) {
+    opciones = opciones || {};
     console.log('mostrarClientesEnModal: Mostrando clientes. Lista:', clientes?.length || 0, 'Total en base:', totalEnBase);
     
     const tbody = document.getElementById('modal-clientes-tbody');
@@ -2353,11 +2361,20 @@ function mostrarClientesEnModal(clientes, baseNombre, totalEnBase) {
     
     const inputBusqueda = document.getElementById('modal-ver-clientes-busqueda');
     if (inputBusqueda) {
-        inputBusqueda.value = '';
-        inputBusqueda.removeEventListener('input', _filtrarClientesModalHandler);
-        inputBusqueda.removeEventListener('input', _busquedaClientesModalServidor);
-        inputBusqueda.addEventListener('input', _filtrarClientesModalHandler);
-        inputBusqueda.addEventListener('input', _busquedaClientesModalServidor);
+        if (!opciones.mantenerBusqueda) {
+            inputBusqueda.value = '';
+        }
+        if (!inputBusqueda._clientesModalListenersAttached) {
+            inputBusqueda.addEventListener('input', _filtrarClientesModalHandler);
+            inputBusqueda.addEventListener('input', _busquedaClientesModalServidor);
+            inputBusqueda._clientesModalListenersAttached = true;
+        }
+    }
+    
+    const terminoBusqueda = (inputBusqueda?.value || '').trim().toLowerCase();
+    if (terminoBusqueda && opciones.mantenerBusqueda) {
+        _filtrarClientesModalHandler();
+        return;
     }
     
     _renderizarClientesEnModal(_clientesModalVerClientes);
@@ -2374,6 +2391,7 @@ function mostrarClientesEnModal(clientes, baseNombre, totalEnBase) {
 
 let _clientesModalTotalEnBase = 0;
 let _busquedaClientesModalTimeout = null;
+let _clientesModalBusquedaServidorActiva = false;
 function _busquedaClientesModalServidor() {
     const input = document.getElementById('modal-ver-clientes-busqueda');
     const baseId = window._modalVerClientesBaseId;
@@ -2381,20 +2399,41 @@ function _busquedaClientesModalServidor() {
     if (!input || !baseId) return;
     clearTimeout(_busquedaClientesModalTimeout);
     const term = (input.value || '').trim();
+    if (term.length < 2) {
+        if (_clientesModalBusquedaServidorActiva) {
+            _clientesModalBusquedaServidorActiva = false;
+            _busquedaClientesModalTimeout = setTimeout(function() {
+                const tbody = document.getElementById('modal-clientes-tbody');
+                if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center"><i class="fas fa-spinner fa-spin"></i> Cargando...</td></tr>';
+                fetch('index.php?action=obtener_clientes_base&base_id=' + baseId)
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success && data.clientes) {
+                            mostrarClientesEnModal(data.clientes, baseNombre, data.total, { mantenerBusqueda: true });
+                        }
+                    })
+                    .catch(function() {
+                        if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center alert alert-danger">Error al cargar clientes</td></tr>';
+                    });
+            }, 300);
+        }
+        return;
+    }
+    _clientesModalBusquedaServidorActiva = true;
     _busquedaClientesModalTimeout = setTimeout(function() {
+        const termActual = (input.value || '').trim();
+        if (termActual.length < 2) return;
         const tbody = document.getElementById('modal-clientes-tbody');
-        const url = term.length >= 2
-            ? 'index.php?action=obtener_clientes_base&base_id=' + baseId + '&busqueda=' + encodeURIComponent(term)
-            : 'index.php?action=obtener_clientes_base&base_id=' + baseId;
-        if (term.length >= 2 && tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center"><i class="fas fa-spinner fa-spin"></i> Buscando...</td></tr>';
+        const url = 'index.php?action=obtener_clientes_base&base_id=' + baseId + '&busqueda=' + encodeURIComponent(termActual);
+        if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center"><i class="fas fa-spinner fa-spin"></i> Buscando...</td></tr>';
         fetch(url).then(function(r) { return r.json(); }).then(function(data) {
             if (data.success && data.clientes) {
-                mostrarClientesEnModal(data.clientes, baseNombre, data.total);
+                mostrarClientesEnModal(data.clientes, baseNombre, data.total, { mantenerBusqueda: true });
             }
         }).catch(function() {
             if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="text-center alert alert-danger">Error al buscar</td></tr>';
         });
-    }, term.length >= 2 ? 400 : 0);
+    }, 400);
 }
 
 function _filtrarClientesModalHandler() {

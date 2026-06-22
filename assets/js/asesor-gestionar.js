@@ -200,11 +200,7 @@ function hayCamposPerfilacionConDatos() {
     }
 
     const idsAcuerdo = [
-        'saldo-a-pagar',
-        'descuento-monto',
-        'descuento-porcentaje',
         'total-a-pagar-acuerdo',
-        'fecha-limite-acuerdo',
         'simulador-monto',
         'simulador-num-cuotas',
         'simulador-valor-cuota',
@@ -276,8 +272,8 @@ function limpiarFormularioGestion(opts) {
     hide('acuerdo-todas-obligaciones-subseleccion-wrap');
 
     const idsAcuerdo = [
-        'saldo-a-pagar', 'descuento-monto', 'descuento-porcentaje', 'total-a-pagar-acuerdo',
-        'fecha-limite-acuerdo', 'simulador-monto', 'simulador-num-cuotas', 'simulador-valor-cuota',
+        'total-a-pagar-acuerdo',
+        'simulador-monto', 'simulador-num-cuotas', 'simulador-valor-cuota',
         'acuerdo-comite-monto-propuesto', 'acuerdo-comite-estado', 'fecha-pago', 'cuota-pago',
         'cuota-actual', 'volver-llamar-fecha', 'volver-llamar-hora'
     ];
@@ -709,46 +705,9 @@ function obtenerValorNumericoInputMulti(input) {
     return parsePesosColombia(input.value);
 }
 
-function calcularTotalAPagarEnTarjeta(card) {
-    const saldoEl = card.querySelector('.js-saldo-a-pagar');
-    const descMontoEl = card.querySelector('.js-descuento-monto');
-    const descPctEl = card.querySelector('.js-descuento-porcentaje');
-    const totalEl = card.querySelector('.js-total-a-pagar-acuerdo');
-    if (!saldoEl || !totalEl) return;
-
-    const saldo = obtenerValorNumericoInputMulti(saldoEl);
-    const descuentoMonto = obtenerValorNumericoInputMulti(descMontoEl);
-    const descuentoPorcentaje = parseFloat((descPctEl && descPctEl.value ? descPctEl.value : '').replace(/[^\d.]/g, '')) || 0;
-
-    let descuento = 0;
-    let porcentajeCalculado = 0;
-    let montoCalculado = 0;
-
-    if (descuentoMonto > 0 && saldo > 0) {
-        descuento = descuentoMonto;
-        porcentajeCalculado = (descuentoMonto / saldo) * 100;
-        if (descPctEl && descPctEl !== document.activeElement) {
-            descPctEl.value = porcentajeCalculado.toFixed(2);
-        }
-    } else if (descuentoPorcentaje > 0 && saldo > 0) {
-        descuento = (saldo * descuentoPorcentaje) / 100;
-        montoCalculado = descuento;
-        if (descMontoEl && descMontoEl !== document.activeElement) {
-            descMontoEl.value = formatearNumeroEnteroAcuerdo(montoCalculado);
-        }
-    }
-
-    const total = saldo - descuento;
-    totalEl.value = total > 0 ? formatearNumeroEnteroAcuerdo(total) : '0';
-}
-
-function attachListenersPagoTotalCard(card) {
-    if (!card) return;
-    const saldoEl = card.querySelector('.js-saldo-a-pagar');
-    const descMontoEl = card.querySelector('.js-descuento-monto');
-    const descPctEl = card.querySelector('.js-descuento-porcentaje');
-
-    function fmtInputSaldo(e) {
+function attachFormatoPesoAcuerdo(input) {
+    if (!input) return;
+    input.addEventListener('input', function(e) {
         let value = e.target.value.replace(/[^\d.,]/g, '');
         if (value) {
             const numValue = parsePesosColombia(value);
@@ -763,57 +722,16 @@ function attachListenersPagoTotalCard(card) {
         } else {
             e.target.value = '';
         }
-        calcularTotalAPagarEnTarjeta(card);
-    }
+    });
+    input.addEventListener('blur', function(e) {
+        const num = parsePesosColombia(e.target.value);
+        if (num > 0) e.target.value = formatearNumeroEnteroAcuerdo(num);
+    });
+}
 
-    if (saldoEl) {
-        saldoEl.addEventListener('input', fmtInputSaldo);
-        saldoEl.addEventListener('blur', function(e) {
-            const num = parsePesosColombia(e.target.value);
-            if (num > 0) e.target.value = formatearNumeroEnteroAcuerdo(num);
-        });
-    }
-    if (descMontoEl) {
-        descMontoEl.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^\d.,]/g, '');
-            if (value) {
-                const numValue = parsePesosColombia(value);
-                if (!isNaN(numValue) && numValue >= 0) {
-                    const tieneDecimales = /,\d*$/.test(value);
-                    e.target.value = tieneDecimales
-                        ? numValue.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-                        : formatearNumeroEnteroAcuerdo(Math.floor(numValue));
-                } else {
-                    e.target.value = value;
-                }
-            } else {
-                e.target.value = '';
-            }
-            if (value && descPctEl) descPctEl.value = '';
-            calcularTotalAPagarEnTarjeta(card);
-        });
-        descMontoEl.addEventListener('blur', function(e) {
-            const num = parsePesosColombia(e.target.value);
-            if (num > 0) e.target.value = formatearNumeroEnteroAcuerdo(num);
-        });
-    }
-    if (descPctEl) {
-        descPctEl.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^\d.]/g, '');
-            if (value) {
-                let numValue = parseFloat(value);
-                if (numValue > 100) {
-                    value = '100';
-                    numValue = 100;
-                }
-                e.target.value = value;
-            } else {
-                e.target.value = '';
-            }
-            if (value && descMontoEl) descMontoEl.value = '';
-            calcularTotalAPagarEnTarjeta(card);
-        });
-    }
+function attachListenersPagoTotalCard(card) {
+    if (!card) return;
+    attachFormatoPesoAcuerdo(card.querySelector('.js-total-a-pagar-acuerdo'));
 }
 
 function buildHtmlTarjetaPagoTotal(ob, fechaMin) {
@@ -824,36 +742,11 @@ function buildHtmlTarjetaPagoTotal(ob, fechaMin) {
     <div style="font-weight: 700; margin-bottom: 10px; color: #1a5276;"><i class="fas fa-file-invoice-dollar"></i> Obligación ${op}</div>
     <div style="display: flex; flex-direction: column; gap: 10px;">
         <div style="display: flex; align-items: center; gap: 8px;">
-            <label style="min-width: 140px; margin: 0;">Saldo a pagar:</label>
-            <div style="position: relative; flex: 1;">
-                <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #666; font-weight: 600;">$</span>
-                <input type="text" class="js-saldo-a-pagar" placeholder="0" style="width: 100%; padding: 8px 8px 8px 30px; border: 1px solid #ddd; border-radius: 4px;" inputmode="numeric">
-            </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <label style="min-width: 140px; margin: 0;">Descuento:</label>
-            <div style="flex: 1; display: flex; gap: 8px;">
-                <div style="position: relative; flex: 1;">
-                    <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #666; font-weight: 600;">$</span>
-                    <input type="text" class="js-descuento-monto" placeholder="Monto" style="width: 100%; padding: 8px 8px 8px 30px; border: 1px solid #ddd; border-radius: 4px;" inputmode="numeric">
-                </div>
-                <span style="align-self: center; color: #666;">o</span>
-                <div style="position: relative; flex: 1;">
-                    <input type="text" class="js-descuento-porcentaje" placeholder="%" style="width: 100%; padding: 8px 30px 8px 8px; border: 1px solid #ddd; border-radius: 4px; text-align: right;" inputmode="numeric">
-                    <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: #666; font-weight: 600; pointer-events: none;">%</span>
-                </div>
-            </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
             <label style="min-width: 140px; margin: 0;">Total a pagar:</label>
             <div style="position: relative; flex: 1;">
                 <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #28a745; font-weight: 700;">$</span>
-                <input type="text" class="js-total-a-pagar-acuerdo" placeholder="0" readonly style="width: 100%; padding: 8px 8px 8px 30px; border: 2px solid #28a745; border-radius: 4px; background: #f8f9fa; font-weight: 600; color: #28a745;">
+                <input type="text" class="js-total-a-pagar-acuerdo" placeholder="0" style="width: 100%; padding: 8px 8px 8px 30px; border: 2px solid #28a745; border-radius: 4px; font-weight: 600; color: #28a745;" inputmode="numeric">
             </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <label style="min-width: 140px; margin: 0;">Fecha límite:</label>
-            <input type="date" class="js-fecha-limite-acuerdo" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" min="${fechaMin}">
         </div>
     </div>
 </div>`;
@@ -1091,18 +984,14 @@ function validarTarjetaAcuerdoMulti(obligacionId, operacion, nivel2) {
         return { ok: false, message: pref + 'no se encontró el formulario de acuerdo.' };
     }
     if (nivel2 === 'acuerdo_pago_total') {
-        const saldoRaw = card.querySelector('.js-saldo-a-pagar');
-        const dmRaw = card.querySelector('.js-descuento-monto');
-        const dpRaw = card.querySelector('.js-descuento-porcentaje');
         const totalRaw = card.querySelector('.js-total-a-pagar-acuerdo');
-        const flRaw = card.querySelector('.js-fecha-limite-acuerdo');
-        const saldo = saldoRaw ? String(saldoRaw.value || '').trim() : '';
-        const dm = dmRaw ? String(dmRaw.value || '').trim() : '';
-        const dp = dpRaw ? String(dpRaw.value || '').trim() : '';
         const tot = totalRaw ? String(totalRaw.value || '').trim() : '';
-        const fl = flRaw ? String(flRaw.value || '').trim() : '';
-        if (!saldo || !dm || !dp || !tot || !fl) {
-            return { ok: false, message: pref + 'diligencie saldo, descuento (monto y %), total y fecha límite.' };
+        if (!tot) {
+            return { ok: false, message: pref + 'diligencie total a pagar.' };
+        }
+        const totalNum = parsePesosColombia(tot);
+        if (!totalNum || totalNum <= 0) {
+            return { ok: false, message: pref + 'total a pagar debe ser mayor a cero.' };
         }
         return { ok: true };
     }
@@ -1168,24 +1057,16 @@ function construirDatosAcuerdoMultiParaPayload(obligacionId, nivel2) {
     const card = obtenerTarjetaAcuerdoMulti(obligacionId);
     if (!card) return {};
     if (nivel2 === 'acuerdo_pago_total') {
-        const saldoInput = card.querySelector('.js-saldo-a-pagar');
-        const descuentoMontoInput = card.querySelector('.js-descuento-monto');
-        const descuentoPorcentajeInput = card.querySelector('.js-descuento-porcentaje');
         const totalInput = card.querySelector('.js-total-a-pagar-acuerdo');
-        const fechaLimiteInput = card.querySelector('.js-fecha-limite-acuerdo');
-        const saldoAPagar = saldoInput ? parsePesosColombia(saldoInput.value) : null;
-        const descuentoMonto = descuentoMontoInput ? parsePesosColombia(descuentoMontoInput.value) : null;
-        const descuentoPorcentaje = descuentoPorcentajeInput ? parseFloat(descuentoPorcentajeInput.value.replace(',', '.').replace(/[^\d.]/g, '')) : null;
         const totalAPagarAcuerdo = totalInput ? parsePesosColombia(totalInput.value) : null;
-        const fechaLimiteAcuerdo = fechaLimiteInput && fechaLimiteInput.value ? fechaLimiteInput.value : null;
         return {
-            fecha_pago: fechaLimiteAcuerdo,
+            fecha_pago: null,
             cuota: totalAPagarAcuerdo,
-            saldo_a_pagar: saldoAPagar,
-            descuento_monto: descuentoMonto,
-            descuento_porcentaje: descuentoPorcentaje,
+            saldo_a_pagar: null,
+            descuento_monto: null,
+            descuento_porcentaje: null,
             total_a_pagar_acuerdo: totalAPagarAcuerdo,
-            fecha_limite_acuerdo: fechaLimiteAcuerdo,
+            fecha_limite_acuerdo: null,
             simulador_monto: null,
             simulador_numero_cuotas: null,
             simulador_valor_cuota: null,
@@ -1835,10 +1716,7 @@ function mostrarHistorial(gestiones) {
                     let bloque = '<div class="historial-acuerdo" style="margin-top: 12px; padding: 10px; background: #f0f8ff; border-left: 4px solid #007bff; border-radius: 4px;">';
                     bloque += '<p style="margin: 0 0 8px; font-weight: 600; color: #007bff;"><i class="fas fa-file-contract"></i> Datos del acuerdo</p>';
                     if (a.tipo_acuerdo === 'total') {
-                        if (a.valor_original != null) bloque += '<p style="margin: 4px 0;"><strong>Saldo a pagar:</strong> $' + parseFloat(a.valor_original).toLocaleString('es-CO') + '</p>';
-                        if (a.descuento_aplicado != null && parseFloat(a.descuento_aplicado) > 0) bloque += '<p style="margin: 4px 0;"><strong>Descuento aplicado:</strong> $' + parseFloat(a.descuento_aplicado).toLocaleString('es-CO') + '</p>';
                         if (a.valor_final_pago_total != null) bloque += '<p style="margin: 4px 0;"><strong>Total a pagar:</strong> $' + parseFloat(a.valor_final_pago_total).toLocaleString('es-CO') + '</p>';
-                        if (a.fecha_limite_pago) bloque += '<p style="margin: 4px 0;"><strong>Fecha de pago:</strong> ' + formatearFechaSoloFecha(a.fecha_limite_pago) + '</p>';
                     } else if (a.tipo_acuerdo === 'cuotas') {
                         if (a.valor_original != null) bloque += '<p style="margin: 4px 0;"><strong>Monto a financiar:</strong> $' + parseFloat(a.valor_original).toLocaleString('es-CO') + '</p>';
                         if (a.numero_cuotas != null) bloque += '<p style="margin: 4px 0;"><strong>Número de cuotas:</strong> ' + a.numero_cuotas + '</p>';
@@ -2201,34 +2079,12 @@ function guardarGestion() {
         }
         // Si es ACUERDO PAGO TOTAL, usar los campos específicos
         else if (nivel2 === 'acuerdo_pago_total') {
-            const saldoInput = document.getElementById('saldo-a-pagar');
-            const descuentoMontoInput = document.getElementById('descuento-monto');
-            const descuentoPorcentajeInput = document.getElementById('descuento-porcentaje');
             const totalInput = document.getElementById('total-a-pagar-acuerdo');
-            const fechaLimiteInput = document.getElementById('fecha-limite-acuerdo');
-            
-            if (saldoInput && saldoInput.value) {
-                const v = parsePesosColombia(saldoInput.value);
-                saldoAPagar = v > 0 ? v : null;
-            }
-            if (descuentoMontoInput && descuentoMontoInput.value) {
-                const v = parsePesosColombia(descuentoMontoInput.value);
-                descuentoMonto = v > 0 ? v : null;
-            }
-            if (descuentoPorcentajeInput && descuentoPorcentajeInput.value) {
-                const v = descuentoPorcentajeInput.value.replace(',', '.').replace(/[^\d.]/g, '');
-                descuentoPorcentaje = v ? parseFloat(v) : null;
-            }
+
             if (totalInput && totalInput.value) {
                 const v = parsePesosColombia(totalInput.value);
                 totalAPagarAcuerdo = v > 0 ? v : null;
             }
-            if (fechaLimiteInput && fechaLimiteInput.value) {
-                fechaLimiteAcuerdo = fechaLimiteInput.value;
-            }
-            // Para acuerdo pago total, usar fecha límite como fecha de pago
-            fechaPago = fechaLimiteAcuerdo;
-            // Usar total a pagar como cuota
             cuota = totalAPagarAcuerdo;
         } else if (nivel2 === 'acuerdo_largo_plazo') {
             const simMontoEl = document.getElementById('simulador-monto');
@@ -2340,18 +2196,15 @@ function guardarGestion() {
     }
 
     if (!acuerdoDesdeTarjetasMulti && !salteaFormularioAcuerdoUnicoPorTodasMulti && esAcuerdoPago && nivel2 === 'acuerdo_pago_total') {
-        const saldoInput = document.getElementById('saldo-a-pagar');
-        const descuentoMontoInput = document.getElementById('descuento-monto');
-        const descuentoPorcentajeInput = document.getElementById('descuento-porcentaje');
         const totalInput = document.getElementById('total-a-pagar-acuerdo');
-        const fechaLimiteInput = document.getElementById('fecha-limite-acuerdo');
-        const saldoRaw = saldoInput ? String(saldoInput.value || '').trim() : '';
-        const descuentoMontoRaw = descuentoMontoInput ? String(descuentoMontoInput.value || '').trim() : '';
-        const descuentoPctRaw = descuentoPorcentajeInput ? String(descuentoPorcentajeInput.value || '').trim() : '';
         const totalRaw = totalInput ? String(totalInput.value || '').trim() : '';
-        const fechaLimiteRaw = fechaLimiteInput ? String(fechaLimiteInput.value || '').trim() : '';
-        if (!saldoRaw || !descuentoMontoRaw || !descuentoPctRaw || !totalRaw || !fechaLimiteRaw) {
-            alert('Para ACUERDO PAGO TOTAL debe diligenciar todos los campos del acuerdo.');
+        if (!totalRaw) {
+            alert('Para ACUERDO PAGO TOTAL debe diligenciar total a pagar.');
+            return;
+        }
+        const totalNum = parsePesosColombia(totalRaw);
+        if (!totalNum || totalNum <= 0) {
+            alert('Total a pagar debe ser mayor a cero.');
             return;
         }
     }
@@ -2567,17 +2420,8 @@ function guardarGestionMultiplesFacturas(facturasIds, canalContacto, nivel1Label
 
     if (esAcuerdoPagoNivel1Valor(nivel1Val) && !acuerdoPorTarjetas) {
         if (nivel2 === 'acuerdo_pago_total') {
-            const saldoInput = document.getElementById('saldo-a-pagar');
-            const descuentoMontoInput = document.getElementById('descuento-monto');
-            const descuentoPorcentajeInput = document.getElementById('descuento-porcentaje');
             const totalInput = document.getElementById('total-a-pagar-acuerdo');
-            const fechaLimiteInput = document.getElementById('fecha-limite-acuerdo');
-            if (saldoInput && saldoInput.value) saldoAPagar = parsePesosColombia(saldoInput.value) || null;
-            if (descuentoMontoInput && descuentoMontoInput.value) descuentoMonto = parsePesosColombia(descuentoMontoInput.value) || null;
-            if (descuentoPorcentajeInput && descuentoPorcentajeInput.value) descuentoPorcentaje = parseFloat(descuentoPorcentajeInput.value.replace(',', '.').replace(/[^\d.]/g, '')) || null;
             if (totalInput && totalInput.value) totalAPagarAcuerdo = parsePesosColombia(totalInput.value) || null;
-            if (fechaLimiteInput && fechaLimiteInput.value) fechaLimiteAcuerdo = fechaLimiteInput.value;
-            fechaPago = fechaLimiteAcuerdo;
             cuota = totalAPagarAcuerdo;
         } else if (nivel2 === 'acuerdo_aprobado') {
             const montoInput = document.getElementById('acuerdo-comite-monto-propuesto');
@@ -2783,138 +2627,8 @@ document.addEventListener('DOMContentLoaded', function() {
         fechaPagoInput.setAttribute('min', fechaMinima);
     }
     
-    // Configurar fecha límite mínima a hoy
-    const fechaLimiteInput = document.getElementById('fecha-limite-acuerdo');
-    if (fechaLimiteInput) {
-        const hoy = new Date();
-        const fechaMinima = hoy.toISOString().split('T')[0];
-        fechaLimiteInput.setAttribute('min', fechaMinima);
-    }
-    
-    // Configurar formato de pesos colombianos y cálculo automático para campos de acuerdo pago total
-    // Formato Colombia: punto (.) = separador de miles, coma (,) = decimales (centavos). Ej: 231.310 = doscientos treinta y un mil; 231.310,50 = con cincuenta centavos
-    const saldoAPagarInput = document.getElementById('saldo-a-pagar');
-    const descuentoMontoInput = document.getElementById('descuento-monto');
-    const descuentoPorcentajeInput = document.getElementById('descuento-porcentaje');
-    const totalAPagarAcuerdoInput = document.getElementById('total-a-pagar-acuerdo');
-    
-    function obtenerValorNumerico(input) {
-        if (!input) return 0;
-        return parsePesosColombia(input.value);
-    }
-    
-    function formatearNumero(numero) {
-        if (numero === 0 || isNaN(numero)) return '';
-        return numero.toLocaleString('es-CO', {minimumFractionDigits: 0, maximumFractionDigits: 0});
-    }
-    
-    function calcularTotalAPagar() {
-        if (!saldoAPagarInput || !totalAPagarAcuerdoInput) return;
-        
-        const saldo = obtenerValorNumerico(saldoAPagarInput);
-        const descuentoMonto = obtenerValorNumerico(descuentoMontoInput);
-        const descuentoPorcentaje = parseFloat(descuentoPorcentajeInput.value.replace(/[^\d.]/g, '')) || 0;
-        
-        let descuento = 0;
-        let porcentajeCalculado = 0;
-        let montoCalculado = 0;
-        
-        // Si hay descuento en monto, calcular el porcentaje equivalente
-        if (descuentoMonto > 0 && saldo > 0) {
-            descuento = descuentoMonto;
-            porcentajeCalculado = (descuentoMonto / saldo) * 100;
-            // Actualizar el campo de porcentaje sin disparar eventos
-            if (descuentoPorcentajeInput && descuentoPorcentajeInput !== document.activeElement) {
-                descuentoPorcentajeInput.value = porcentajeCalculado.toFixed(2);
-            }
-        } 
-        // Si hay descuento en porcentaje, calcular el monto equivalente
-        else if (descuentoPorcentaje > 0 && saldo > 0) {
-            descuento = (saldo * descuentoPorcentaje) / 100;
-            montoCalculado = descuento;
-            // Actualizar el campo de monto sin disparar eventos
-            if (descuentoMontoInput && descuentoMontoInput !== document.activeElement) {
-                const montoFormateado = formatearNumero(montoCalculado);
-                descuentoMontoInput.value = montoFormateado;
-            }
-        }
-        
-        const total = saldo - descuento;
-        totalAPagarAcuerdoInput.value = total > 0 ? formatearNumero(total) : '0';
-    }
-    
-    // Formatear saldo a pagar: permitir punto (miles) y coma (decimales). Al escribir/blur parseamos formato Colombia y mostramos con punto de miles.
-    if (saldoAPagarInput) {
-        saldoAPagarInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^\d.,]/g, '');
-            if (value) {
-                const numValue = parsePesosColombia(value);
-                if (!isNaN(numValue) && numValue >= 0) {
-                    const tieneDecimales = /,\d*$/.test(value);
-                    e.target.value = tieneDecimales
-                        ? numValue.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-                        : formatearNumero(Math.floor(numValue));
-                } else {
-                    e.target.value = value;
-                }
-            } else {
-                e.target.value = '';
-            }
-            calcularTotalAPagar();
-        });
-        saldoAPagarInput.addEventListener('blur', function(e) {
-            const num = parsePesosColombia(e.target.value);
-            if (num > 0) e.target.value = formatearNumero(num);
-        });
-    }
-    
-    // Formatear descuento monto: mismo criterio (punto = miles, coma = centavos)
-    if (descuentoMontoInput) {
-        descuentoMontoInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^\d.,]/g, '');
-            if (value) {
-                const numValue = parsePesosColombia(value);
-                if (!isNaN(numValue) && numValue >= 0) {
-                    const tieneDecimales = /,\d*$/.test(value);
-                    e.target.value = tieneDecimales
-                        ? numValue.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-                        : formatearNumero(Math.floor(numValue));
-                } else {
-                    e.target.value = value;
-                }
-            } else {
-                e.target.value = '';
-            }
-            if (value && descuentoPorcentajeInput) descuentoPorcentajeInput.value = '';
-            calcularTotalAPagar();
-        });
-        descuentoMontoInput.addEventListener('blur', function(e) {
-            const num = parsePesosColombia(e.target.value);
-            if (num > 0) e.target.value = formatearNumero(num);
-        });
-    }
-    
-    // Formatear descuento porcentaje
-    if (descuentoPorcentajeInput) {
-        descuentoPorcentajeInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^\d.]/g, '');
-            if (value) {
-                const numValue = parseFloat(value);
-                if (numValue > 100) {
-                    value = '100';
-                    numValue = 100;
-                }
-                e.target.value = value;
-            } else {
-                e.target.value = '';
-            }
-            // Limpiar monto si se ingresa porcentaje
-            if (value && descuentoMontoInput) {
-                descuentoMontoInput.value = '';
-            }
-            calcularTotalAPagar();
-        });
-    }
+    // Formato de pesos para acuerdo pago total (solo total a pagar)
+    attachFormatoPesoAcuerdo(document.getElementById('total-a-pagar-acuerdo'));
     
     // ========== Cuotas manuales (Acuerdo a largo plazo) ==========
     const simuladorMonto = document.getElementById('simulador-monto');

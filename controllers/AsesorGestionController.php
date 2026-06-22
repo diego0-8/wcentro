@@ -305,14 +305,15 @@ class AsesorGestionController {
 
         if ($nivel2 === 'acuerdo_pago_total') {
             $tipoAcuerdo = 'total';
-            $saldo = $this->normalizarDecimal($datosGestion['saldo_a_pagar'] ?? null);
-            $descuento = $this->normalizarDecimal($datosGestion['descuento_monto'] ?? null);
             $total = $this->normalizarDecimal($datosGestion['total_a_pagar_acuerdo'] ?? null);
+            if ($total === null || $total <= 0) {
+                return ['success' => false, 'message' => 'Acuerdo pago total: total a pagar es obligatorio y debe ser mayor a cero.'];
+            }
             $datosAcuerdo = [
-                'valor_original' => $saldo,
-                'descuento_aplicado' => $descuento,
+                'valor_original' => $total,
+                'descuento_aplicado' => null,
                 'valor_final_pago_total' => $total,
-                'fecha_limite_pago' => isset($datosGestion['fecha_limite_acuerdo']) && $datosGestion['fecha_limite_acuerdo'] !== '' ? $datosGestion['fecha_limite_acuerdo'] : null,
+                'fecha_limite_pago' => null,
             ];
         } elseif ($nivel2 === 'acuerdo_largo_plazo') {
             $tipoAcuerdo = 'cuotas';
