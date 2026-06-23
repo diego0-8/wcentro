@@ -48,76 +48,29 @@
  * 
  * FIX: iceGatheringTimeout obliga al navegador a esperar candidatos antes de enviar el SDP con 0.0.0.0
  */
-function configureSessionDescriptionHandlerOptions(softphone, session, sdhOptions, defaultRtcConfig) {
-    const isIncomingInvite = typeof SIP !== 'undefined' &&
-        (session instanceof SIP.Invitation || session?.constructor?.name === 'Invitation');
-
-    const iceServers = sdhOptions.iceServers ||
-        sdhOptions.rtcConfiguration?.iceServers ||
-        defaultRtcConfig?.iceServers ||
-        (typeof softphone._getIceServers === 'function' ? softphone._getIceServers() : []);
-
-    const rtcConfiguration = Object.assign({}, defaultRtcConfig || {}, sdhOptions.rtcConfiguration || sdhOptions.peerConnectionConfiguration || {}, {
-        iceServers,
-        iceTransportPolicy: typeof softphone._getIceTransportPolicy === 'function'
-            ? softphone._getIceTransportPolicy(iceServers)
-            : 'all',
-        bundlePolicy: 'balanced',
-        rtcpMuxPolicy: 'negotiate'
-    });
-
-    if (!sdhOptions.peerConnectionOptions) {
-        sdhOptions.peerConnectionOptions = {};
-    }
-    const peerConnectionOptions = sdhOptions.peerConnectionOptions;
-    if (!peerConnectionOptions.rtcConfiguration) {
-        peerConnectionOptions.rtcConfiguration = rtcConfiguration;
-    }
-
-    // SIP.js aplica addDefaultIceCheckingTimeout(5000) si peerConnectionOptions está vacío.
-    // Ese timer es el "RTCIceChecking Timeout" de 5s que retrasa contestar.
-    if (isIncomingInvite) {
-        peerConnectionOptions.iceCheckingTimeout = 500;
-        sdhOptions.iceGatheringTimeout = 0;
-    } else if (peerConnectionOptions.iceCheckingTimeout === undefined || peerConnectionOptions.iceCheckingTimeout === null) {
-        peerConnectionOptions.iceCheckingTimeout = 1500;
-    }
-
-    sdhOptions.rtcConfiguration = rtcConfiguration;
-    sdhOptions.iceServers = iceServers;
-
-    // #region agent log
-    fetch('http://127.0.0.1:7850/ingest/71835b90-65bf-4660-be07-f9b977e3b166',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e469ff'},body:JSON.stringify({sessionId:'e469ff',location:'softphone-web.js:configureSessionDescriptionHandlerOptions',message:'SDH options before create',data:{isIncomingInvite,iceServers,iceCheckingTimeout:peerConnectionOptions.iceCheckingTimeout,bundlePolicy:rtcConfiguration.bundlePolicy},timestamp:Date.now(),hypothesisId:'H3-H5',runId:'post-fix'})}).catch(()=>{});
-    // #endregion
-
-    return { sdhOptions, isIncomingInvite };
-}
-
 function createCustomSessionDescriptionHandlerFactory(softphone, peerConnectionConfig) {
     return function customSDHFactory(session, options) {
         const logger = session.userAgent.getLogger('sip.SessionDescriptionHandler', session.id);
-        let sdhOptions = Object.assign({}, options || {});
+        const sdhOptions = Object.assign({}, options || {});
 
-        const configured = configureSessionDescriptionHandlerOptions(softphone, session, sdhOptions, peerConnectionConfig);
-        sdhOptions = configured.sdhOptions;
-        const isIncomingInvite = configured.isIncomingInvite;
+        // CRÍTICO: Asegurar que rtcConfiguration o peerConnectionConfiguration esté presente
+        if (!sdhOptions.rtcConfiguration && !sdhOptions.peerConnectionConfiguration) {
+            sdhOptions.peerConnectionConfiguration = peerConnectionConfig;
+        }
 
         // CRÍTICO: SIEMPRE usar el mediaStreamFactory del softphone (igual que APEX4.2 funcional)
+        // Esto asegura que se use nuestro método personalizado en lugar del predeterminado de SIP.js
         sdhOptions.mediaStreamFactory = softphone.mediaStreamFactory;
 
-        const sdh = new SIP.Web.SessionDescriptionHandler(logger, sdhOptions);
-
-        // Entrante: disparar ICE complete al primer candidato host (no esperar STUN 5s)
-        if (isIncomingInvite && sdh.peerConnection && typeof sdh.triggerIceGatheringComplete === 'function') {
-            let iceTriggeredEarly = false;
-            sdh.peerConnection.addEventListener('icecandidate', (event) => {
-                if (iceTriggeredEarly || !event.candidate?.candidate) return;
-                if (event.candidate.candidate.includes('typ host ')) {
-                    iceTriggeredEarly = true;
-                    sdh.triggerIceGatheringComplete();
-                }
-            });
+        // FIX CRÍTICO: iceGatheringTimeout
+        // Obliga al navegador a esperar candidatos antes de enviar el SDP con 0.0.0.0
+        // Aumentado a 3000ms para dar más tiempo a que los candidatos locales se recojan primero
+        // Esto evita que el SDP use la IP pública en LAN
+        if (!sdhOptions.iceGatheringTimeout) {
+            sdhOptions.iceGatheringTimeout = 3000;
         }
+
+        const sdh = new SIP.Web.SessionDescriptionHandler(logger, sdhOptions);
 
         // FIX CRÍTICO: Interceptar el SDP para configurar codecs y corregir IP pública
         let localCandidateIp = null;
@@ -127,20 +80,11 @@ function createCustomSessionDescriptionHandlerFactory(softphone, peerConnectionC
         const originalGetDescription = sdh.getDescription;
         if (originalGetDescription) {
             sdh.getDescription = function (constraints, modifiers) {
-                const getDescOptions = Object.assign({}, constraints || {});
-                if (!getDescOptions.peerConnectionOptions) {
-                    getDescOptions.peerConnectionOptions = sdhOptions.peerConnectionOptions;
-                }
-                if (softphone.config?.debug_mode) {
-                    console.log('⚡ [CustomSDH] Interceptando getDescription - ENTRADA');
-                }
-                return originalGetDescription.call(this, getDescOptions, modifiers).then((description) => {
-                    if (softphone.config?.debug_mode) {
-                        console.log('⚡ [CustomSDH] getDescription completado - Procesando SDP');
-                    }
+                console.log('⚡ [CustomSDH] Interceptando getDescription - ENTRADA');
+                return originalGetDescription.call(this, constraints, modifiers).then((description) => {
+                    console.log('⚡ [CustomSDH] getDescription completado - Procesando SDP');
                     if (description && description.sdp) {
-                        // Aceptar SDP con \r\n o solo \n (navegadores pueden devolver solo \n)
-                        let sdpLines = description.sdp.split(/\r?\n/).filter(l => l.length > 0);
+                        let sdpLines = description.sdp.split('\r\n');
                         let hasPublicIp = false;
                         let foundLocalIp = localCandidateIp;
                         let audioMediaIndex = -1;
@@ -149,9 +93,7 @@ function createCustomSessionDescriptionHandlerFactory(softphone, peerConnectionC
                         let fmtpLines = [];
 
                         // Buscar la línea m=audio y procesar codecs
-                        if (softphone.config?.debug_mode) {
-                            console.log('🔍 [DEBUG] Iniciando bucle for. sdpLines.length:', sdpLines.length);
-                        }
+                        console.log('🔍 [DEBUG] Iniciando bucle for. sdpLines.length:', sdpLines.length);
                         for (let i = 0; i < sdpLines.length; i++) {
                             // Buscar línea m=audio
                             if (sdpLines[i].startsWith('m=audio ')) {
@@ -159,10 +101,8 @@ function createCustomSessionDescriptionHandlerFactory(softphone, peerConnectionC
                                 const parts = sdpLines[i].split(' ');
                                 // Guardar los payload types actuales
                                 codecLines = parts.slice(3);
-                                if (softphone.config?.debug_mode) {
-                                    console.log('🎵 [Codecs] audioMediaIndex encontrado:', audioMediaIndex);
-                                    console.log('🎵 [Codecs] Codecs originales:', codecLines);
-                                }
+                                console.log('🎵 [Codecs] audioMediaIndex encontrado:', audioMediaIndex);
+                                console.log('🎵 [Codecs] Codecs originales:', codecLines);
                             }
 
                             // Buscar líneas a=rtpmap (definiciones de codecs)
@@ -316,13 +256,12 @@ function createCustomSessionDescriptionHandlerFactory(softphone, peerConnectionC
                             // Reconstruir el SDP
                             description.sdp = sdpLines.join('\r\n');
 
-                            if (softphone.config.debug_mode) {
-                                const codecsList = preferredPayloads.map(c => c.name).join(' | ');
-                                console.log('%c📞 [CODECS ACTIVOS] ' + codecsList, 'background: #28a745; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
-                                console.log('%c   Payloads: ' + newPayloads.join(', '), 'background: #17a2b8; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
-                                console.log('%c   Prioridad: ' + preferredPayloads.map(c => `${c.name} (${c.priority})`).join(' → '), 'background: #6c757d; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
-                                console.log('%c📡 [BANDWIDTH] Optimizado para redes móviles: 64 kbps (G.711)', 'background: #6f42c1; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
-                            }
+                            // LOG PÚBLICO: Mostrar siempre los codecs activos en la consola
+                            const codecsList = preferredPayloads.map(c => c.name).join(' | ');
+                            console.log('%c📞 [CODECS ACTIVOS] ' + codecsList, 'background: #28a745; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
+                            console.log('%c   Payloads: ' + newPayloads.join(', '), 'background: #17a2b8; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
+                            console.log('%c   Prioridad: ' + preferredPayloads.map(c => `${c.name} (${c.priority})`).join(' → '), 'background: #6c757d; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
+                            console.log('%c📡 [BANDWIDTH] Optimizado para redes móviles: 64 kbps (G.711)', 'background: #6f42c1; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
                         }
                     }
 
@@ -372,26 +311,15 @@ class WebRTCSoftphone {
         this.incomingCallInvitation = null; // Alias para compatibilidad con APEX5.1
         this.acceptInProgress = false;
         this.voicemailDetected = false; // Flag para detectar buzón de voz
-        this.hasRung = false; // Flag para rastrear si la llamada timbró antes de ir a buzón
-        this.ringingDetected = false; // Flag para detectar cuando se recibe 180 Ringing
 
         this.status = 'disconnected';
         this.currentNumber = '';
 
         this.incomingCallAudio = null;
         this.ringbackAudio = null;
-        this.hangupAudio = null;
-        this.dtmfSounds = {}; // Cache de sonidos DTMF
         this.remoteAudioElement = null;
-        /** Ruta base para assets/audio (funciona desde cualquier vista del proyecto) */
+        /** Ruta base para assets/audio (funciona desde index.php en la raíz del proyecto) */
         this.audioBaseUrl = this._getAudioBaseUrl();
-        /** Flag para reproducir 2up2 solo una vez por llamada al conectar */
-        this._playedConnectedSound = false;
-        this.blipClickAudio = null;
-        this.blip1Audio = null;
-        this.voicemailAlertAudio = null;
-        this.connectedSoundAudio = null;
-        this._incomingFallbackUsed = false;
         this.lastMediaStream = null;
         this.timer = null;
         this.callStart = null;
@@ -418,39 +346,14 @@ class WebRTCSoftphone {
         // Exponer la instancia globalmente para que esté disponible desde onclick
         window.webrtcSoftphone = this;
 
-        // OPTIMIZADO: Conectar al PBX inmediatamente y solicitar micrófono en paralelo
-        // Esto reduce la latencia inicial - el permiso se solicitará cuando sea necesario
-        this._connect();
-
-        this._bindBeforeUnloadGuard();
-        
-        // Solicitar permiso de micrófono en paralelo (no bloquea la conexión)
-        this._requestMicrophonePermissionBeforeConnect().catch((err) => {
-            if (this.config.debug_mode) {
-                console.warn('⚠️ [Softphone] Error al solicitar permiso de micrófono:', err);
-            }
-            // El permiso se solicitará automáticamente cuando se necesite hacer una llamada
-        });
-    }
-
-    /**
-     * Indica si hay una sesión de llamada activa (saliente o entrante).
-     */
-    isCallActive() {
-        const session = this.currentCall || this.incomingCall;
-        if (!session) return false;
-        const s = String(session.state ?? '');
-        return !['Terminated', '5', 'Canceled', '4'].includes(s);
-    }
-
-    _bindBeforeUnloadGuard() {
-        if (this._beforeUnloadBound) return;
-        this._beforeUnloadBound = true;
-        window.addEventListener('beforeunload', (e) => {
-            if (this.isCallActive()) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
+        // CRÍTICO: Solicitar micrófono ANTES de conectar al PBX (igual que APEX4.2 funcional)
+        // Esto asegura que el permiso esté concedido cuando SIP.js intente adquirir el stream
+        this._requestMicrophonePermissionBeforeConnect().then(() => {
+            this._connect();
+        }).catch((err) => {
+            console.warn('⚠️ [Softphone] Error al solicitar permiso de micrófono antes de conectar:', err);
+            // Continuar con la conexión aunque falle el permiso (el stream silencioso funcionará)
+            this._connect();
         });
     }
 
@@ -791,7 +694,6 @@ class WebRTCSoftphone {
                         </div>
                     </div>
                 </div>
-
             </div>
         `;
 
@@ -814,7 +716,6 @@ class WebRTCSoftphone {
                 }
             });
         }
-
 
         // Configurar eventos de teclado para marcar con el teclado físico
         this._setupKeyboardEvents();
@@ -856,14 +757,14 @@ class WebRTCSoftphone {
             iceServers: iceServers,
             // CRÍTICO: En LAN sin STUN, usar 'relay' evita que el navegador genere candidatos srflx
             // Si hay STUN (WAN), usar 'all' para permitir todos los tipos
-            iceTransportPolicy: this._getIceTransportPolicy(iceServers),
-            bundlePolicy: 'balanced',
+            iceTransportPolicy: (iceServers.length === 0) ? 'relay' : 'all',
+            bundlePolicy: 'max-bundle',
             rtcpMuxPolicy: 'negotiate', // Negociar RTCP-MUX (más flexible que 'require')
             
-            // Optimizaciones para redes móviles y velocidad de conexión
-            iceCandidatePoolSize: 4, // Pre-calcular 4 candidatos para iniciar llamadas más rápido
-            iceConnectionReceivingTimeout: 15000, // Reducido de 30s a 15s para detectar fallos más rápido
-            iceBackupCandidatePairPingInterval: 15000 // Reducido para mantener conexión más activa
+            // Optimizaciones para redes móviles
+            iceCandidatePoolSize: 0,
+            iceConnectionReceivingTimeout: 30000,
+            iceBackupCandidatePairPingInterval: 25000
         };
 
         // Usar nuestro SessionDescriptionHandlerFactory personalizado
@@ -880,20 +781,27 @@ class WebRTCSoftphone {
             hackWssInTransport: true, // CRÍTICO: Asegurar transporte WSS correcto en Contact
             transportOptions: {
                 server: this.config.wss_server,
-                keepAliveInterval: 20, // Reducido de 30 a 20 segundos para mantener conexión más activa
+                keepAliveInterval: 30,
                 traceSip: this.config.debug_mode, // Habilitar traza SIP para debugging
                 // CRÍTICO: Para puerto 8089 (WSS), asegurar que se use conexión segura
-                connectionTimeout: 5000, // Optimizado a 5 segundos para conexión más rápida
+                connectionTimeout: 10000, // Timeout de 10 segundos para conexión
             },
             sessionDescriptionHandlerFactory: customSDHFactory,
             sessionDescriptionHandlerFactoryOptions: {
+                // CRÍTICO: Pasar mediaStreamFactory en sessionDescriptionHandlerFactoryOptions (igual que APEX4.2 funcional)
+                // Esto asegura que todas las sesiones usen nuestro mediaStreamFactory
                 mediaStreamFactory: this.mediaStreamFactory,
                 iceServers,
-                peerConnectionOptions: this._buildPeerConnectionOptions(iceServers, { incoming: false }),
+                // FIX: Timeout aumentado para recolección de candidatos (Evita el 0.0.0.0 y IP pública en LAN)
+                // 3000ms da tiempo suficiente para que los candidatos locales se recojan primero
+                iceGatheringTimeout: 3000,
+                // CRÍTICO: Usar rtcConfiguration en lugar de peerConnectionConfiguration (igual que APEX4.2 funcional)
                 rtcConfiguration: {
                     iceServers: iceServers,
-                    iceTransportPolicy: this._getIceTransportPolicy(iceServers),
-                    bundlePolicy: 'balanced',
+                    // CRÍTICO: En LAN sin STUN, usar 'relay' evita que el navegador genere candidatos srflx (IP pública)
+                    // Si hay STUN (WAN), usar 'all' para permitir todos los tipos
+                    iceTransportPolicy: (iceServers.length === 0) ? 'relay' : 'all',
+                    bundlePolicy: 'max-bundle',
                     rtcpMuxPolicy: 'negotiate'
                 }
             },
@@ -943,7 +851,7 @@ class WebRTCSoftphone {
                 // Mejorar manejo de errores de registro, especialmente 403
                 this.registerer = new SIP.Registerer(this.userAgent, {
                     registrar: registrarURI,
-                    expires: 300, // Reducido de 600 a 300 segundos (5 min) para registro más frecuente y conexión más estable
+                    expires: 600,
                     requestDelegate: {
                         onReject: (response) => {
                             const code = response.message.statusCode;
@@ -1099,10 +1007,8 @@ class WebRTCSoftphone {
             return;
         }
 
-        // Reset flags de buzón de voz y timbrado al iniciar nueva llamada
+        // Reset flag de buzón de voz al iniciar nueva llamada
         this.voicemailDetected = false;
-        this.hasRung = false;
-        this.ringingDetected = false;
         this._hideVoicemailNotification();
 
         // LIMPIEZA: Asegurar que el número y dominio no tengan espacios
@@ -1118,8 +1024,8 @@ class WebRTCSoftphone {
             iceServers: iceServers,
             // CRÍTICO: En LAN sin STUN, usar 'relay' evita que el navegador genere candidatos srflx
             // Si hay STUN (WAN), usar 'all' para permitir todos los tipos
-            iceTransportPolicy: this._getIceTransportPolicy(iceServers),
-            bundlePolicy: 'balanced',
+            iceTransportPolicy: (iceServers.length === 0) ? 'relay' : 'all',
+            bundlePolicy: 'max-bundle',
             rtcpMuxPolicy: 'negotiate' // Negociar RTCP-MUX (más flexible que 'require')
         };
 
@@ -1127,11 +1033,9 @@ class WebRTCSoftphone {
         // IMPORTANTE: Debe estar DENTRO del constructor del Inviter para capturar eventos desde el inicio
         // En redes de Wom, Tigo o Movistar, si el usuario cuelga desde su celular,
         // el operador envía CANCEL (si no ha contestado) o BYE (si ya estaba hablando)
-        const iceServersCall = this._getIceServers();
-        const peerConnectionOptionsCall = this._buildPeerConnectionOptions(iceServersCall, { incoming: false });
-
         const inviter = new SIP.Inviter(this.userAgent, targetUri, {
             sessionDescriptionHandlerOptions: {
+                // CRÍTICO: Constraints optimizados para redes móviles (3G/4G/5G)
                 constraints: {
                     audio: {
                         echoCancellation: true,
@@ -1144,9 +1048,28 @@ class WebRTCSoftphone {
                     },
                     video: false
                 },
-                iceServers: iceServersCall,
-                peerConnectionOptions: peerConnectionOptionsCall,
-                rtcConfiguration: peerConnectionOptionsCall.rtcConfiguration,
+                iceServers: this._getIceServers(),
+                // FIX: Timeout aumentado para llamadas salientes (Evita el 0.0.0.0 y IP pública en LAN)
+                // 3000ms da tiempo suficiente para que los candidatos locales se recojan primero
+                iceGatheringTimeout: 3000,
+                // CRÍTICO: Usar rtcConfiguration (no peerConnectionConfiguration) en Inviter
+                // Optimizado para redes móviles (3G/4G/5G)
+                rtcConfiguration: (() => {
+                    const iceServersCall = this._getIceServers();
+                    return {
+                        iceServers: iceServersCall,
+                        // CRÍTICO: En LAN sin STUN, usar 'relay' evita que el navegador genere candidatos srflx (IP pública)
+                        // Si hay STUN (WAN), usar 'all' para permitir todos los tipos
+                        iceTransportPolicy: (iceServersCall.length === 0) ? 'relay' : 'all',
+                        bundlePolicy: 'max-bundle',
+                        rtcpMuxPolicy: 'negotiate', // Negociar RTCP-MUX (más flexible que 'require')
+                        
+                        // Optimizaciones para redes móviles
+                        iceCandidatePoolSize: 0,    // No pre-generar candidatos (ahorra recursos en móviles)
+                        iceConnectionReceivingTimeout: 30000, // 30s timeout para conexión ICE (mejor para 3G)
+                        iceBackupCandidatePairPingInterval: 25000 // Intervalo de ping para candidatos de respaldo
+                    };
+                })(),
                 // CRÍTICO: Pasar mediaStreamFactory como función async (igual que APEX4.2 funcional)
                 // Este es el ÚNICO método que debe usarse para adquirir el stream
                 mediaStreamFactory: async () => {
@@ -1167,70 +1090,10 @@ class WebRTCSoftphone {
                     this._stopRingback();
                 },
                 onProgress: (response) => {
-                    // CRÍTICO: Detectar 180 Ringing para saber que la llamada timbró normalmente
-                    if (response && response.message) {
-                        const statusCode = response.message.statusCode || response.statusCode;
-                        if (statusCode === 180) {
-                            // 180 Ringing significa que el teléfono está timbrando normalmente
-                            this.hasRung = true;
-                            this.ringingDetected = true;
-                            if (this.config.debug_mode) {
-                                console.log('📞 [Softphone] 180 Ringing recibido - Teléfono está timbrando normalmente');
-                            }
-                        }
-                    }
-                    
                     // Detectar buzón de voz en mensajes de progreso (180 Ringing, 183 Session Progress)
                     this._detectVoicemail(response);
-                    
-                    // CRÍTICO: Detectar respuestas de error en mensajes de progreso (4xx, 5xx, 6xx)
-                    // Algunos servidores envían errores como 183 Session Progress con código de error
-                    if (response && response.message) {
-                        const statusCode = response.message.statusCode || response.statusCode;
-                        
-                        // Detectar códigos de error (4xx, 5xx, 6xx) en respuestas de progreso
-                        if (statusCode >= 400) {
-                            if (this.config.debug_mode) {
-                                console.warn(`⚠️ [Softphone] Código de error detectado en onProgress: ${statusCode}`);
-                            }
-                            
-                            // Detener ringback inmediatamente
-                            this._stopRingback();
-                            
-                            // Limpiar timeout
-                            if (this.outgoingCallTimeout) {
-                                clearTimeout(this.outgoingCallTimeout);
-                                this.outgoingCallTimeout = null;
-                            }
-                            
-                            // Procesar como rechazo
-                            const errorMessages = {
-                                404: 'Número fuera de servicio o no existe',
-                                480: 'Número temporalmente no disponible',
-                                486: 'Número ocupado',
-                                487: 'Llamada cancelada',
-                                408: 'Timeout - Sin respuesta',
-                                503: 'Servicio no disponible',
-                                500: 'Error del servidor'
-                            };
-                            
-                            const reason = response.message.reasonPhrase || response.reasonPhrase || 'Error desconocido';
-                            const userFriendlyMsg = errorMessages[statusCode] || reason;
-                            const errorMsg = `${userFriendlyMsg} (${statusCode})`;
-                            
-                            console.error(`%c❌ [ERROR EN PROGRESO] ${statusCode}: ${reason}`, 
-                                'background: #dc3545; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
-                            
-                            this._showError(errorMsg);
-                            this.endCall();
-                            return; // Salir temprano para evitar procesamiento adicional
-                        }
-                    }
                 },
                 onReject: (response) => {
-                    // CRÍTICO: Detener ringback inmediatamente cuando hay rechazo
-                    this._stopRingback();
-                    
                     // Limpiar timeout de llamada saliente (llamada rechazada)
                     if (this.outgoingCallTimeout) {
                         clearTimeout(this.outgoingCallTimeout);
@@ -1238,54 +1101,22 @@ class WebRTCSoftphone {
                     }
 
                     let msg = 'Llamada rechazada';
-                    let errorCode = 0;
-                    let errorReason = 'Desconocido';
-                    
                     if (response) {
-                        // Obtener código y razón del error
-                        errorCode = response.statusCode || response.message?.statusCode || 0;
-                        errorReason = response.reasonPhrase || response.message?.reasonPhrase || 'Desconocido';
-                        
-                        // Mapear códigos SIP comunes a mensajes más descriptivos
-                        const errorMessages = {
-                            404: 'Número fuera de servicio o no existe',
-                            480: 'Número temporalmente no disponible',
-                            486: 'Número ocupado',
-                            487: 'Llamada cancelada',
-                            408: 'Timeout - Sin respuesta',
-                            503: 'Servicio no disponible',
-                            500: 'Error del servidor'
-                        };
-                        
-                        const userFriendlyMsg = errorMessages[errorCode] || errorReason;
-                        msg = `${userFriendlyMsg} (${errorCode})`;
+                        const code = response.statusCode || 0;
+                        const reason = response.reasonPhrase || 'Desconocido';
+                        msg += ` (${code}: ${reason})`;
 
                         // Intentar extraer causa específica de Asterisk
-                        let asteriskCause = null;
                         if (response.hasHeader && response.hasHeader('X-Asterisk-HangupCause')) {
-                            asteriskCause = response.getHeader('X-Asterisk-HangupCause');
+                            const cause = response.getHeader('X-Asterisk-HangupCause');
+                            msg += ` - ${cause}`;
                         } else if (response.message && response.message.headers && response.message.headers['X-Asterisk-HangupCause']) {
-                            asteriskCause = response.message.headers['X-Asterisk-HangupCause'][0]?.raw || 
-                                          response.message.headers['X-Asterisk-HangupCause'][0];
-                        }
-                        
-                        if (asteriskCause) {
-                            msg += ` - Causa: ${asteriskCause}`;
-                        }
-                        
-                        // Log detallado para diagnóstico
-                        console.error(`%c❌ [LLAMADA RECHAZADA] ${errorCode}: ${errorReason}`, 
-                            'background: #dc3545; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
-                        if (this.config.debug_mode) {
-                            console.log('📋 Detalles de la respuesta:', {
-                                statusCode: errorCode,
-                                reasonPhrase: errorReason,
-                                asteriskCause: asteriskCause,
-                                response: response
-                            });
+                            // Fallback para estructuras alternativas de SIP.js
+                            const cause = response.message.headers['X-Asterisk-HangupCause'][0].raw;
+                            msg += ` - ${cause}`;
                         }
                     }
-                    
+                    console.warn(`❌ [Softphone] ${msg}`);
                     this._showError(msg);
                     this.endCall();
                 }
@@ -1311,64 +1142,8 @@ class WebRTCSoftphone {
                     }
                 },
                 onProgress: (response) => {
-                    // CRÍTICO: Detectar 180 Ringing para saber que la llamada timbró normalmente
-                    if (response && response.message) {
-                        const statusCode = response.message.statusCode || response.statusCode;
-                        if (statusCode === 180) {
-                            // 180 Ringing significa que el teléfono está timbrando normalmente
-                            this.hasRung = true;
-                            this.ringingDetected = true;
-                            if (this.config.debug_mode) {
-                                console.log('📞 [Softphone] 180 Ringing recibido en delegate - Teléfono está timbrando normalmente');
-                            }
-                        }
-                    }
-                    
                     // Detectar buzón de voz en mensajes de progreso
                     this._detectVoicemail(response);
-                    
-                    // CRÍTICO: Detectar respuestas de error en mensajes de progreso del delegate
-                    // Algunos servidores envían errores como 183 Session Progress con código de error
-                    if (response && response.message) {
-                        const statusCode = response.message.statusCode || response.statusCode;
-                        
-                        // Detectar códigos de error (4xx, 5xx, 6xx) en respuestas de progreso
-                        if (statusCode >= 400) {
-                            if (this.config.debug_mode) {
-                                console.warn(`⚠️ [Softphone] Código de error detectado en delegate.onProgress: ${statusCode}`);
-                            }
-                            
-                            // Detener ringback inmediatamente
-                            this._stopRingback();
-                            
-                            // Limpiar timeout
-                            if (this.outgoingCallTimeout) {
-                                clearTimeout(this.outgoingCallTimeout);
-                                this.outgoingCallTimeout = null;
-                            }
-                            
-                            // Procesar como rechazo
-                            const errorMessages = {
-                                404: 'Número fuera de servicio o no existe',
-                                480: 'Número temporalmente no disponible',
-                                486: 'Número ocupado',
-                                487: 'Llamada cancelada',
-                                408: 'Timeout - Sin respuesta',
-                                503: 'Servicio no disponible',
-                                500: 'Error del servidor'
-                            };
-                            
-                            const reason = response.message.reasonPhrase || response.reasonPhrase || 'Error desconocido';
-                            const userFriendlyMsg = errorMessages[statusCode] || reason;
-                            const errorMsg = `${userFriendlyMsg} (${statusCode})`;
-                            
-                            console.error(`%c❌ [ERROR EN DELEGATE] ${statusCode}: ${reason}`, 
-                                'background: #dc3545; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
-                            
-                            this._showError(errorMsg);
-                            this.endCall();
-                        }
-                    }
                 }
             }
         });
@@ -1386,7 +1161,6 @@ class WebRTCSoftphone {
             }
 
             if (s === 'Established' || s === '4') {
-                this._playConnectedSound(); // 2up2.mp3 - llamada conectada
                 // Limpiar timeout de llamada saliente (llamada establecida)
                 if (this.outgoingCallTimeout) {
                     clearTimeout(this.outgoingCallTimeout);
@@ -1415,66 +1189,20 @@ class WebRTCSoftphone {
                 this._startCallTimer();
                 this._setupAudio(inviter);
             } else if (s === 'Progress' || s === '2' || s === 'Establishing' || s === '3' || s === 'Ringing' || s === '1') {
-                // Marcar que la llamada está timbrando (estado Ringing)
-                if (s === 'Ringing' || s === '1') {
-                    this.hasRung = true;
-                    this.ringingDetected = true;
-                    if (this.config.debug_mode) {
-                        console.log('📞 [Softphone] Estado Ringing detectado - Teléfono está timbrando');
-                    }
-                }
                 this._playRingback();
             } else if (s === 'Terminated' || s === '5') {
-                // CRÍTICO: Detener timbrado INMEDIATAMENTE cuando la sesión termina
-                this._stopRingback();
-                
                 // Limpiar timeout de llamada saliente (llamada terminada)
                 if (this.outgoingCallTimeout) {
                     clearTimeout(this.outgoingCallTimeout);
                     this.outgoingCallTimeout = null;
                 }
 
-                // Intentar obtener información del error si está disponible
-                let errorInfo = null;
-                try {
-                    // Verificar si hay información de error en la sesión
-                    if (inviter.request && inviter.request.delegate) {
-                        // La información de error puede estar en diferentes lugares según SIP.js
-                        const lastResponse = inviter.request?.delegate?.lastResponse;
-                        if (lastResponse && lastResponse.statusCode >= 400) {
-                            errorInfo = {
-                                code: lastResponse.statusCode,
-                                reason: lastResponse.reasonPhrase
-                            };
-                        }
-                    }
-                } catch (e) {
-                    // Ignorar errores al obtener información
-                }
-
-                // Log detallado para diagnóstico
+                // CRÍTICO: Detener timbrado inmediatamente cuando la sesión termina
+                // Este es el método más confiable para detectar colgado remoto
                 if (this.config.debug_mode) {
-                    console.log('📞 [Softphone] Sesión terminada detectada por stateChange');
-                    if (errorInfo) {
-                        console.log(`   Código de error: ${errorInfo.code} - ${errorInfo.reason}`);
-                    }
+                    console.log('📞 [Softphone] Sesión terminada detectada por stateChange - Colgado remoto');
                 }
-                
-                // Si hay información de error, mostrar mensaje apropiado
-                if (errorInfo && errorInfo.code >= 400) {
-                    const errorMessages = {
-                        404: 'Número fuera de servicio o no existe',
-                        480: 'Número temporalmente no disponible',
-                        486: 'Número ocupado',
-                        487: 'Llamada cancelada',
-                        408: 'Timeout - Sin respuesta',
-                        503: 'Servicio no disponible',
-                        500: 'Error del servidor'
-                    };
-                    const userFriendlyMsg = errorMessages[errorInfo.code] || errorInfo.reason;
-                    this._showError(`${userFriendlyMsg} (${errorInfo.code})`);
-                }
-                
+                this._stopRingback(); // Detener timbrado inmediatamente
                 this.endCall();
             }
         });
@@ -1496,15 +1224,14 @@ class WebRTCSoftphone {
                 console.log('✅ [Softphone] INVITE enviado');
             }
 
-            // Timeout DESHABILITADO por defecto
-            // Los errores (404, 480, etc.) se detectan inmediatamente en onReject
-            // Las llamadas continuarán hasta que se establezcan, vayan a buzón de voz, o el usuario cuelgue manualmente
+            // Configurar timeout para cancelar automáticamente la llamada saliente si no hay respuesta
+            // Valor por defecto: 60 segundos (60000ms) si no está configurado
             // NOTA: Si outgoingCallTimeout es 0 o false, el timeout está deshabilitado
             const outgoingTimeoutSeconds = (this.config.outgoingCallTimeout !== undefined && this.config.outgoingCallTimeout !== null) 
                 ? this.config.outgoingCallTimeout 
-                : 0; // DESHABILITADO: Permite que las llamadas continúen hasta buzón de voz o establecimiento
+                : 60; // Aumentado a 60 segundos por defecto
             
-            // Solo configurar timeout si es mayor a 0 (por defecto está deshabilitado)
+            // Solo configurar timeout si es mayor a 0
             if (outgoingTimeoutSeconds > 0) {
                 const outgoingTimeoutMs = outgoingTimeoutSeconds * 1000;
                 
@@ -1519,45 +1246,25 @@ class WebRTCSoftphone {
                 }
                 
                 // Crear timer para cancelar automáticamente después del timeout
-                // IMPORTANTE: Este timeout solo se activa si NO hay respuesta del servidor
-                // Los errores (404, 480, etc.) se detectan inmediatamente en onReject y cancelan este timeout
                 this.outgoingCallTimeout = setTimeout(() => {
                     // Solo cancelar si la llamada aún está en estado "Establishing" o "Ringing"
-                    // y NO se ha recibido ninguna respuesta (ni error ni progreso)
                     if (this.currentCall === inviter) {
                         const currentState = String(inviter.state);
-                        // Solo cancelar si aún está en estados iniciales sin respuesta
                         if (currentState === 'Establishing' || currentState === '3' || 
                             currentState === 'Progress' || currentState === '2' || 
                             currentState === 'Ringing' || currentState === '1') {
-                            
-                            // Verificar si realmente no hay respuesta del servidor
-                            // Si hasRung o ringingDetected es true, significa que sí hubo respuesta (180 Ringing)
-                            // y el número está funcionando, así que NO cancelamos
-                            if (!this.hasRung && !this.ringingDetected) {
-                                // No hay respuesta del servidor - cancelar (número probablemente fuera de servicio)
-                                if (this.config.debug_mode) {
-                                    console.log(`⏱️ [WebRTC Softphone] Timeout alcanzado (${outgoingTimeoutSeconds}s). Sin respuesta del servidor. Cancelando llamada.`);
-                                }
-                                console.log(`%c⏱️ [TIMEOUT] Llamada cancelada automáticamente después de ${outgoingTimeoutSeconds} segundos sin respuesta`, 'background: #ffc107; color: black; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
-                                this._showError(`Llamada cancelada: No hubo respuesta del servidor después de ${outgoingTimeoutSeconds} segundos`);
-                                this.hangup();
-                            } else {
-                                // Hay respuesta (180 Ringing recibido) - el número está funcionando
-                                // NO cancelar - dejar que continúe timbrando normalmente
-                                if (this.config.debug_mode) {
-                                    console.log(`✅ [WebRTC Softphone] Respuesta detectada (180 Ringing). Número funcional. Continuando llamada.`);
-                                }
-                                // No hacer nada - la llamada continuará normalmente
+                            if (this.config.debug_mode) {
+                                console.log(`⏱️ [WebRTC Softphone] Timeout alcanzado (${outgoingTimeoutSeconds}s). Cancelando llamada saliente automáticamente.`);
                             }
+                            console.log(`%c⏱️ [TIMEOUT] Llamada cancelada automáticamente después de ${outgoingTimeoutSeconds} segundos sin respuesta`, 'background: #ffc107; color: black; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
+                            this._showError(`Llamada cancelada: No hubo respuesta después de ${outgoingTimeoutSeconds} segundos`);
+                            this.hangup();
                         }
                     }
                 }, outgoingTimeoutMs);
             } else {
-                // Timeout deshabilitado - las llamadas continuarán hasta que se establezcan, vayan a buzón, o el usuario cuelgue
                 if (this.config.debug_mode) {
-                    console.log('✅ [WebRTC Softphone] Timeout de llamada saliente DESHABILITADO - Las llamadas continuarán hasta buzón de voz o establecimiento');
-                    console.log('   ℹ️ Los errores (404, 480, etc.) se detectan inmediatamente en onReject');
+                    console.log('⏱️ [WebRTC Softphone] Timeout de llamada saliente deshabilitado (outgoingCallTimeout = 0)');
                 }
             }
         } catch (err) {
@@ -1584,6 +1291,7 @@ class WebRTCSoftphone {
         }
 
         // CRÍTICO: Prevención de llamadas duplicadas
+        // Si ya hay una sesión activa (llamada en curso o entrante pendiente), rechazar la nueva
         if (this.currentCall || this.incomingCall) {
             if (this.config.debug_mode) {
                 console.warn('⚠️ [WebRTC Softphone] Ya hay una sesión activa, rechazando llamada entrante duplicada');
@@ -1592,33 +1300,86 @@ class WebRTCSoftphone {
             return;
         }
 
-        // Guardar sesión de inmediato
-        this.incomingCall = invitation;
-        this.incomingCallInvitation = invitation;
-        this._incomingInviteAt = Date.now();
+        // Intentar obtener el número del llamante de diferentes formas
+        let caller = 'Desconocido';
 
-        // Identificar llamante (rápido, sin bloquear UI)
-        const caller = this._extractCaller(invitation) || 'Desconocido';
-        this.currentNumber = caller;
+        try {
+            // Método 1: Desde remoteIdentity
+            if (invitation.remoteIdentity && invitation.remoteIdentity.uri) {
+                if (invitation.remoteIdentity.uri.user) {
+                    caller = invitation.remoteIdentity.uri.user;
+                    if (this.config.debug_mode) {
+                        console.log('   📞 Caller desde remoteIdentity.uri.user:', caller);
+                    }
+                } else if (invitation.remoteIdentity.uri.toString) {
+                    const uriString = invitation.remoteIdentity.uri.toString();
+                    const match = uriString.match(/sip:(\d+)@/);
+                    if (match && match[1]) {
+                        caller = match[1];
+                        if (this.config.debug_mode) {
+                            console.log('   📞 Caller desde remoteIdentity.uri.toString:', caller);
+                        }
+                    }
+                }
+            }
+
+            // Método 2: Desde request.from
+            if (caller === 'Desconocido' && invitation.request && invitation.request.from) {
+                const fromHeader = invitation.request.from;
+                if (fromHeader.uri && fromHeader.uri.user) {
+                    caller = fromHeader.uri.user;
+                    if (this.config.debug_mode) {
+                        console.log('   📞 Caller desde request.from.uri.user:', caller);
+                    }
+                } else if (fromHeader.displayName) {
+                    caller = fromHeader.displayName;
+                    if (this.config.debug_mode) {
+                        console.log('   📞 Caller desde request.from.displayName:', caller);
+                    }
+                }
+            }
+
+            // Método 3: Desde request.headers.From
+            if (caller === 'Desconocido' && invitation.request && invitation.request.headers) {
+                const fromHeader = invitation.request.headers.From;
+                if (fromHeader) {
+                    const match = fromHeader.match(/sip:(\d+)@/);
+                    if (match && match[1]) {
+                        caller = match[1];
+                        if (this.config.debug_mode) {
+                            console.log('   📞 Caller desde request.headers.From:', caller);
+                        }
+                    }
+                }
+            }
+
+            // Método 4: Desde request.from.uri directamente
+            if (caller === 'Desconocido' && invitation.request && invitation.request.from && invitation.request.from.uri) {
+                const uri = invitation.request.from.uri;
+                if (uri.user) {
+                    caller = uri.user;
+                    if (this.config.debug_mode) {
+                        console.log('   📞 Caller desde request.from.uri.user (directo):', caller);
+                    }
+                }
+            }
+        } catch (error) {
+            if (this.config.debug_mode) {
+                console.warn('⚠️ [WebRTC Softphone] Error al extraer número del llamante:', error);
+            }
+        }
 
         if (this.config.debug_mode) {
             console.log('📞 [WebRTC Softphone] Llamada entrante de:', caller);
+            console.log('   📞 Caller final identificado:', caller);
         }
 
-        // PRIORIDAD: timbre y notificación ANTES de cualquier trabajo pesado (reduce latencia percibida)
-        try {
-            this._playIncoming();
-        } catch (error) {
-            console.error('❌ [WebRTC Softphone] Error al reproducir sonido:', error);
-        }
+        // 1. Guardar la sesión actual (igual que APEX5.1)
+        this.incomingCall = invitation;
+        this.incomingCallInvitation = invitation; // Alias para compatibilidad
+        this.currentNumber = caller;
 
-        try {
-            this._showIncomingNotification(caller, caller, invitation);
-        } catch (error) {
-            console.error('❌ [WebRTC Softphone] Error al mostrar notificación:', error);
-            alert(`📞 Llamada entrante de: ${caller}`);
-        }
-
+        // 2. Actualizar UI - Mostrar información de llamada entrante (igual que APEX5.1)
         try {
             this._showCallInfo(caller);
             this._updateCallStatus('Llamada Entrante...');
@@ -1629,19 +1390,29 @@ class WebRTCSoftphone {
             }
         }
 
-        // Pre-adquirir micrófono en segundo plano (no bloquea timbre ni notificación)
-        const preAcquire = () => {
-            this._preAcquireMediaStreamForIncoming().catch(err => {
-                if (this.config.debug_mode) {
-                    console.warn('⚠️ [WebRTC Softphone] No se pudo pre-adquirir stream (se adquirirá al aceptar):', err);
-                }
-            });
-        };
-        if (typeof requestIdleCallback === 'function') {
-            requestIdleCallback(preAcquire, { timeout: 300 });
-        } else {
-            setTimeout(preAcquire, 0);
+        // 3. Mostrar notificación visual de llamada entrante (CRÍTICO - debe mostrarse) (igual que APEX5.1)
+        try {
+            this._showIncomingNotification(caller, caller, invitation);
+            if (this.config.debug_mode) {
+                console.log('✅ [WebRTC Softphone] Notificación de llamada entrante mostrada');
+            }
+        } catch (error) {
+            console.error('❌ [WebRTC Softphone] Error al mostrar notificación:', error);
+            // Intentar mostrar una alerta como fallback
+            alert(`📞 Llamada entrante de: ${caller}`);
         }
+
+        // 4. Reproducir sonido de llamada entrante (CRÍTICO - debe sonar) (igual que APEX5.1)
+        try {
+            this._playIncoming();
+            if (this.config.debug_mode) {
+                console.log('✅ [WebRTC Softphone] Sonido de llamada entrante iniciado');
+            }
+        } catch (error) {
+            console.error('❌ [WebRTC Softphone] Error al reproducir sonido:', error);
+        }
+
+        // 5. Configurar timeout para rechazar automáticamente la llamada después de cierto tiempo
         // Valor por defecto: 30 segundos (30000ms) si no está configurado
         const timeoutSeconds = this.config.incomingCallTimeout || 30;
         const timeoutMs = timeoutSeconds * 1000;
@@ -1731,7 +1502,6 @@ class WebRTCSoftphone {
                     }
                 }
             } else if (stateStr === 'Established' || stateStr === '4') {
-                this._playConnectedSound(); // 2up2.mp3 - llamada conectada
                 // LOG PÚBLICO: Confirmar codec REAL cuando la llamada entrante se establece
                 console.log('%c✅ [LLAMADA ENTRANTE ESTABLECIDA] ' + caller, 'background: #28a745; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
                 
@@ -1756,8 +1526,10 @@ class WebRTCSoftphone {
                 this._hideIncomingNotification();
                 this._stopIncoming(); // Asegurar que el timbrado se detenga
 
-                // Configurar audio en cuanto la sesión esté establecida
-                this._setupAudio(invitation);
+                // Configurar audio después de un breve delay para asegurar que el PeerConnection esté listo
+                setTimeout(() => {
+                    this._setupAudio(invitation);
+                }, 500);
             }
         });
     }
@@ -1859,15 +1631,6 @@ class WebRTCSoftphone {
     }
 
     async acceptIncomingCall() {
-        // Evitar doble "accept" (doble click / doble evento / carreras async)
-        if (this._acceptIncomingInProgress) {
-            if (this.config?.debug_mode) {
-                console.warn('⚠️ [WebRTC Softphone] acceptIncomingCall ignorado: ya hay un accept en progreso');
-            }
-            return;
-        }
-        this._acceptIncomingInProgress = true;
-
         // Limpiar timeout si existe (usuario aceptó manualmente)
         if (this.incomingCallTimeout) {
             clearTimeout(this.incomingCallTimeout);
@@ -1882,7 +1645,6 @@ class WebRTCSoftphone {
 
         if (!invitation) {
             console.warn('⚠️ [WebRTC Softphone] No hay llamada entrante para aceptar');
-            this._acceptIncomingInProgress = false;
             return;
         }
 
@@ -1891,21 +1653,11 @@ class WebRTCSoftphone {
                 console.log('✅ [WebRTC Softphone] Usuario presionó Contestar');
             }
 
-            // SIP.js lanza "Invalid session state Establishing" si intentas accept() fuera del estado inicial.
-            const state = String(invitation.state);
-            if (state === 'Establishing' || state === '3' || state === 'Established' || state === '4') {
-                console.warn(`⚠️ [WebRTC Softphone] No se puede aceptar: estado actual = ${state}`);
-                return;
-            }
-
-            this._stopIncoming();
-            this._hideIncomingNotification();
-
-            const iceServersIncoming = this._getIceServers();
-            const peerConnectionOptions = this._buildPeerConnectionOptions(iceServersIncoming, { incoming: true });
-
+            // Reutilizar la misma configuración robusta de ICE y Audio que usamos para llamar (igual que APEX5.1)
+            // Optimizado para redes móviles (3G/4G/5G)
             const options = {
                 sessionDescriptionHandlerOptions: {
+                    // Constraints optimizados para redes móviles (igual que en makeCall)
                     constraints: {
                         audio: {
                             echoCancellation: true,
@@ -1918,42 +1670,43 @@ class WebRTCSoftphone {
                         },
                         video: false
                     },
-                    iceServers: iceServersIncoming,
-                    iceGatheringTimeout: 0,
-                    peerConnectionOptions,
-                    rtcConfiguration: peerConnectionOptions.rtcConfiguration,
+                    iceServers: this._getIceServers(),
+                    // FIX: Timeout aumentado para llamadas entrantes (Evita el 0.0.0.0 y IP pública en LAN)
+                    // 3000ms da tiempo suficiente para que los candidatos locales se recojan primero
+                    iceGatheringTimeout: 3000,
+                    rtcConfiguration: (() => {
+                        const iceServersIncoming = this._getIceServers();
+                        return {
+                            iceServers: iceServersIncoming,
+                            // CRÍTICO: En LAN sin STUN, usar 'relay' evita que el navegador genere candidatos srflx (IP pública)
+                            // Si hay STUN (WAN), usar 'all' para permitir todos los tipos
+                            iceTransportPolicy: (iceServersIncoming.length === 0) ? 'relay' : 'all',
+                            bundlePolicy: 'max-bundle',
+                            rtcpMuxPolicy: 'negotiate', // Negociar RTCP-MUX (mejor compatibilidad)
+                            
+                            // Optimizaciones para redes móviles (igual que en makeCall)
+                            iceCandidatePoolSize: 0,
+                            iceConnectionReceivingTimeout: 30000,
+                            iceBackupCandidatePairPingInterval: 25000
+                        };
+                    })(),
                     // Pasar mediaStreamFactory que retorna el stream pre-adquirido
                     mediaStreamFactory: async () => {
                         if (this.config.debug_mode) {
                             console.log('🎤 [WebRTC Softphone] mediaStreamFactory LLAMADA PARA CONTESTAR');
                         }
-                        // OPTIMIZACIÓN: Reutilizar stream pre-adquirido si está disponible (más rápido)
-                        if (this.lastMediaStream && this.lastMediaStream.active) {
-                            if (this.config.debug_mode) {
-                                console.log('✅ [WebRTC Softphone] Reutilizando stream pre-adquirido para aceptar llamada');
-                            }
-                            return this.lastMediaStream;
-                        }
-                        // Si no hay stream pre-adquirido, adquirirlo ahora
+                        // Adquirir stream antes de contestar
                         return await this._mediaStreamFactory();
                     }
                 }
             };
 
             // LOG PÚBLICO: Mostrar codecs al aceptar llamada entrante
-            const waitMs = this._incomingInviteAt ? (Date.now() - this._incomingInviteAt) : null;
-            console.log('%c📞 [ACEPTANDO LLAMADA ENTRANTE]' + (waitMs !== null ? ` (${waitMs}ms desde INVITE)` : ''), 'background: #007bff; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
+            console.log('%c📞 [ACEPTANDO LLAMADA ENTRANTE]', 'background: #007bff; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
             console.log('%c📞 Codecs configurados: G.711 A-law (PCMA) y G.711 μ-law (PCMU)', 'background: #28a745; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
             
             // Aceptar la llamada
-            // Limpiar referencia de incoming antes del await para evitar re-entradas que vuelvan a aceptar.
-            this.incomingCallInvitation = null;
-            this.incomingCall = null;
             await invitation.accept(options);
-
-            // #region agent log
-            fetch('http://127.0.0.1:7850/ingest/71835b90-65bf-4660-be07-f9b977e3b166',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e469ff'},body:JSON.stringify({sessionId:'e469ff',location:'softphone-web.js:acceptIncomingCall',message:'accept succeeded',data:{waitMs:this._incomingInviteAt?(Date.now()-this._incomingInviteAt):null,state:String(invitation.state)},timestamp:Date.now(),hypothesisId:'H4',runId:'post-fix'})}).catch(()=>{});
-            // #endregion
 
             // Actualizar UI a "En llamada"
             this.currentCall = invitation;
@@ -1968,15 +1721,10 @@ class WebRTCSoftphone {
             }
 
         } catch (error) {
-            // #region agent log
-            fetch('http://127.0.0.1:7850/ingest/71835b90-65bf-4660-be07-f9b977e3b166',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e469ff'},body:JSON.stringify({sessionId:'e469ff',location:'softphone-web.js:acceptIncomingCall:catch',message:'accept failed',data:{errorName:error?.name,errorMessage:error?.message},timestamp:Date.now(),hypothesisId:'H1-H5',runId:'post-fix'})}).catch(()=>{});
-            // #endregion
             console.error('❌ [WebRTC Softphone] Error al aceptar llamada:', error);
             this._showError('Error al aceptar la llamada: ' + error.message);
             this._hideIncomingNotification();
             this.endCall();
-        } finally {
-            this._acceptIncomingInProgress = false;
         }
     }
 
@@ -2024,10 +1772,6 @@ class WebRTCSoftphone {
      * ------------------------------------------------------------- */
     hangup() {
         if (!this.currentCall) return;
-        
-        // Reproducir sonido de colgar
-        this._playHangupSound();
-        
         try {
             const state = String(this.currentCall.state);
             if (state === 'Establishing' || state === '3' || state === 'Progress' || state === '2') {
@@ -2038,33 +1782,10 @@ class WebRTCSoftphone {
         } catch (e) {
             console.warn('⚠️ error al colgar', e);
         }
-        // Pasar false para evitar reproducir el sonido dos veces (ya se reprodujo arriba)
-        this.endCall(false);
+        this.endCall();
     }
 
-    /**
-     * Reproduce el sonido de colgar
-     */
-    _playHangupSound() {
-        if (!this.hangupAudio) {
-            this.hangupAudio = new Audio(this.audioBaseUrl + 'edd call.mp3');
-            this.hangupAudio.volume = 1.0; // Volumen máximo (100%)
-        }
-        this.hangupAudio.currentTime = 2; // Comenzar desde el segundo 2
-        this.hangupAudio.play().catch(err => {
-            // Silenciar errores de reproducción
-            if (this.config.debug_mode) {
-                console.warn('⚠️ [Hangup Sound] No se pudo reproducir:', err);
-            }
-        });
-    }
-
-    endCall(playSound = true) {
-        // Reproducir sonido de colgar si hay una llamada activa y se solicita
-        if (playSound && (this.currentCall || this.incomingCall)) {
-            this._playHangupSound();
-        }
-
+    endCall() {
         // Limpiar timeouts de llamadas si existen
         if (this.incomingCallTimeout) {
             clearTimeout(this.incomingCallTimeout);
@@ -2097,9 +1818,7 @@ class WebRTCSoftphone {
         this.incomingCallInvitation = null; // Limpiar también el alias (igual que APEX5.1)
         this.currentNumber = '';
         this.voicemailDetected = false; // Reset flag de buzón de voz
-        this.hasRung = false; // Reset flag de timbrado
-        this.ringingDetected = false; // Reset flag de detección de ringing
-        this._playedConnectedSound = false;
+
         // Detener timer y restaurar UI
         this._stopCallTimer();
         this._hideCallInfo();
@@ -2113,59 +1832,6 @@ class WebRTCSoftphone {
     /* -------------------------------------------------------------
      * Audio y media
      * ------------------------------------------------------------- */
-    
-    /**
-     * Pre-adquiere el stream de audio cuando llega una llamada entrante
-     * Esto acelera la aceptación porque el stream ya está listo cuando el usuario presiona "Contestar"
-     */
-    async _preAcquireMediaStreamForIncoming() {
-        // Si ya hay un stream activo, reutilizarlo sin liberarlo
-        if (this.lastMediaStream && this.lastMediaStream.active) {
-            if (this.config.debug_mode) {
-                console.log('✅ [WebRTC Softphone] Stream ya disponible, reutilizando para llamada entrante');
-            }
-            return this.lastMediaStream;
-        }
-
-        // Intentar adquirir el stream de forma silenciosa (sin mostrar errores al usuario)
-        try {
-            if (this.config.debug_mode) {
-                console.log('🎤 [WebRTC Softphone] Pre-adquiriendo stream para llamada entrante...');
-            }
-            
-            const constraints = {
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                },
-                video: false
-            };
-
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                return null;
-            }
-
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            if (this.lastMediaStream && this.lastMediaStream !== stream) {
-                this._releaseLastMediaStream();
-            }
-            this.lastMediaStream = stream;
-
-            if (this.config.debug_mode) {
-                console.log('✅ [WebRTC Softphone] Stream pre-adquirido exitosamente para llamada entrante');
-            }
-
-            return stream;
-        } catch (error) {
-            // Silenciosamente fallar - el stream se adquirirá cuando se acepte la llamada
-            if (this.config.debug_mode) {
-                console.warn('⚠️ [WebRTC Softphone] No se pudo pre-adquirir stream (se adquirirá al aceptar):', error.name);
-            }
-            return null;
-        }
-    }
-
     async _mediaStreamFactory(constraintsFromSIP = {}) {
         if (this.config.debug_mode) {
             console.log('🎤 [Softphone] mediaStreamFactory LLAMADA POR SIP.js');
@@ -2519,108 +2185,11 @@ class WebRTCSoftphone {
     _addDigit(d) {
         this.currentNumber += d;
         this._updateNumberDisplay();
-        this._playBlipClick(); // Feedback táctil: blip_click.mp3
-        this._playDtmfSound(d);
-    }
-
-    /**
-     * Reproduce el sonido DTMF correspondiente al dígito marcado
-     * @param {string} digit - Dígito (0-9, *, #)
-     */
-    _playDtmfSound(digit) {
-        if (!digit || typeof digit !== 'string') return;
-
-        // Mapeo de dígitos a archivos de audio
-        const dtmfMap = {
-            '0': 'DTMF_0.mp3',
-            '1': 'DTMF_1.mp3',
-            '2': 'DTMF_2.mp3',
-            '3': 'DTMF_3.mp3',
-            '4': 'DTMF_4.mp3',
-            '5': 'DTMF_5.mp3',
-            '6': 'DTMF_6.mp3',
-            '7': 'DTMF_7.mp3',
-            '8': 'DTMF_8.mp3',
-            '9': 'DTMF_9.mp3',
-            '*': 'DTMF_star.mp3',
-            '#': 'DTMF_pound.mp3'
-        };
-
-        const audioFile = dtmfMap[digit];
-        if (!audioFile) return;
-
-        // Usar cache si existe, sino crear nuevo Audio
-        if (!this.dtmfSounds[digit]) {
-            this.dtmfSounds[digit] = new Audio(this.audioBaseUrl + audioFile);
-            this.dtmfSounds[digit].volume = 0.5; // Volumen moderado
-        }
-
-        // Reproducir el sonido
-        const sound = this.dtmfSounds[digit];
-        sound.currentTime = 0; // Reiniciar desde el inicio
-        sound.play().catch(err => {
-            // Silenciar errores de reproducción (puede fallar si el usuario no ha interactuado)
-            if (this.config.debug_mode) {
-                console.warn('⚠️ [DTMF Sound] No se pudo reproducir:', err);
-            }
-        });
-    }
-
-    /** Reproduce sonido de tecla (blip_click.mp3) al marcar en el dialpad */
-    _playBlipClick() {
-        try {
-            if (!this.blipClickAudio) {
-                this.blipClickAudio = new Audio(this.audioBaseUrl + 'blip_click.mp3');
-                this.blipClickAudio.volume = 0.4;
-            }
-            this.blipClickAudio.currentTime = 0;
-            this.blipClickAudio.play().catch(() => {});
-        } catch (_) {}
-    }
-
-    /** Reproduce alerta de buzón de voz (silkyalert.mp3) */
-    _playVoicemailAlert() {
-        try {
-            if (!this.voicemailAlertAudio) {
-                this.voicemailAlertAudio = new Audio(this.audioBaseUrl + 'silkyalert.mp3');
-                this.voicemailAlertAudio.volume = 0.7;
-            }
-            this.voicemailAlertAudio.currentTime = 0;
-            this.voicemailAlertAudio.play().catch(() => {});
-        } catch (_) {}
-    }
-
-    /** Reproduce sonido de llamada conectada (2up2.mp3) una vez por llamada */
-    _playConnectedSound() {
-        if (this._playedConnectedSound) return;
-        this._playedConnectedSound = true;
-        try {
-            if (!this.connectedSoundAudio) {
-                this.connectedSoundAudio = new Audio(this.audioBaseUrl + '2up2.mp3');
-                this.connectedSoundAudio.volume = 0.6;
-            }
-            this.connectedSoundAudio.currentTime = 0;
-            this.connectedSoundAudio.play().catch(() => {});
-        } catch (_) {}
     }
 
     _deleteLastDigit() {
-        if (this.currentNumber.length === 0) return;
         this.currentNumber = this.currentNumber.slice(0, -1);
         this._updateNumberDisplay();
-        this._playBlip1(); // Feedback al borrar: blip1.mp3
-    }
-
-    /** Reproduce sonido al borrar dígito (blip1.mp3) */
-    _playBlip1() {
-        try {
-            if (!this.blip1Audio) {
-                this.blip1Audio = new Audio(this.audioBaseUrl + 'blip1.mp3');
-                this.blip1Audio.volume = 0.35;
-            }
-            this.blip1Audio.currentTime = 0;
-            this.blip1Audio.play().catch(() => {});
-        } catch (_) {}
     }
 
     _updateNumberDisplay() {
@@ -2750,67 +2319,6 @@ class WebRTCSoftphone {
         // Hacer la llamada
         await this.makeCall();
     }
-
-
-    /**
-     * Envía una secuencia DTMF por la llamada activa.
-     * Se usa para features del PBX (ej. conferencia/3-way).
-     */
-    async _sendDtmfSequence(session, sequence, opts = {}) {
-        const duration = Number(opts.duration ?? this.config.dtmf_duration_ms ?? 180);
-        const interToneGap = Number(opts.interToneGap ?? this.config.dtmf_gap_ms ?? 80);
-        const extraWait = Number(opts.extraWait ?? this.config.dtmf_extra_wait_ms ?? 50);
-
-        const sdh = session?.sessionDescriptionHandler;
-        const pc = sdh?.peerConnection;
-
-        const sendTone = (tone) => {
-            // Método 1: SIP.js SessionDescriptionHandler
-            if (sdh && typeof sdh.sendDtmf === 'function') {
-                try {
-                    return sdh.sendDtmf(tone, { duration, interToneGap });
-                } catch (_) {
-                    // continuar a fallback
-                }
-            }
-
-            // Método 2: WebRTC RTCRtpSender.dtmf
-            try {
-                const sender = pc?.getSenders?.().find(s => s?.dtmf);
-                if (sender?.dtmf) {
-                    sender.dtmf.insertDTMF(tone, duration, interToneGap);
-                    return true;
-                }
-            } catch (_) { }
-
-            return false;
-        };
-
-        const clean = String(sequence || '').replace(/[^0-9A-D#*wW]/g, '');
-        if (!clean) return false;
-
-        if (this.config.debug_mode) {
-            console.log('📟 [DTMF] Enviando secuencia:', clean);
-            console.log('📟 [DTMF] duration(ms):', duration, 'gap(ms):', interToneGap);
-        }
-
-        for (const ch of clean) {
-            // 'w' = pausa larga (estilo Asterisk)
-            if (ch === 'w' || ch === 'W') {
-                await new Promise(r => setTimeout(r, 500));
-                continue;
-            }
-
-            const ok = sendTone(ch);
-            if (!ok) {
-                console.warn('⚠️ [DTMF] No se pudo enviar tono:', ch);
-                return false;
-            }
-            await new Promise(r => setTimeout(r, duration + interToneGap + extraWait));
-        }
-        return true;
-    }
-
 
     /**
      * Mostrar diálogo de transferencia
@@ -3018,36 +2526,15 @@ class WebRTCSoftphone {
         }
     }
 
-    /**
-     * Obtiene la URL base para archivos en assets/audio (válida desde cualquier ruta del proyecto)
-     * @returns {string}
-     */
-    _getAudioBaseUrl() {
-        if (typeof document === 'undefined' || !document.location) return 'assets/audio/';
-        const path = document.location.pathname || '';
-        const base = path.replace(/\/[^/]*$/, '') || '';
-        return (base ? base + '/' : '') + 'assets/audio/';
-    }
-
     /* -------------------------------------------------------------
      * Tonos
      * ------------------------------------------------------------- */
     _playIncoming() {
         this._stopRingback();
         if (!this.incomingCallAudio) {
-            this.incomingCallAudio = new Audio(this.audioBaseUrl + 'ringtone.mp3');
+            this.incomingCallAudio = new Audio(this._audioUrl('ringtone.mp3'));
             this.incomingCallAudio.loop = true;
             this.incomingCallAudio.volume = 0.7;
-            // Fallback a ring.mp3 si ringtone no carga
-            this.incomingCallAudio.addEventListener('error', () => {
-                if (!this._incomingFallbackUsed) {
-                    this._incomingFallbackUsed = true;
-                    this.incomingCallAudio = new Audio(this.audioBaseUrl + 'ring.mp3');
-                    this.incomingCallAudio.loop = true;
-                    this.incomingCallAudio.volume = 0.7;
-                    this.incomingCallAudio.play().catch(() => {});
-                }
-            }, { once: true });
         }
         this.incomingCallAudio.currentTime = 0;
         this.incomingCallAudio.play().catch(() => { });
@@ -3065,7 +2552,7 @@ class WebRTCSoftphone {
     _playRingback() {
         this._stopIncoming();
         if (!this.ringbackAudio) {
-            this.ringbackAudio = new Audio(this.audioBaseUrl + 'ringback.mp3');
+            this.ringbackAudio = new Audio(this._audioUrl('ringback.mp3'));
             this.ringbackAudio.loop = true;
             this.ringbackAudio.volume = 0.6;
         }
@@ -3222,51 +2709,17 @@ class WebRTCSoftphone {
             if (isVoicemail) {
                 this.voicemailDetected = true;
 
-                // CRÍTICO: Distinguir entre buzón inmediato vs buzón después de timbrar
-                const isImmediateVoicemail = !this.hasRung && !this.ringingDetected;
-                const voicemailType = isImmediateVoicemail ? 'INMEDIATO' : 'DESPUÉS DE TIMBRAR';
-                
-                // Determinar mensaje según el tipo
-                let voicemailMessage = '';
-                let voicemailTitle = '';
-                
-                if (isImmediateVoicemail) {
-                    // Buzón inmediato: Teléfono apagado o fuera de servicio
-                    voicemailTitle = '📴 Teléfono Apagado o Fuera de Servicio';
-                    voicemailMessage = 'La llamada fue redirigida directamente al buzón de voz sin timbrar. El teléfono está apagado o fuera de servicio.';
-                    console.log('%c📴 [BUZÓN INMEDIATO] Teléfono apagado o fuera de servicio', 
-                        'background: #dc3545; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
-                    
-                    // Detener ringback inmediatamente porque no hay timbrado
-                    this._stopRingback();
-                } else {
-                    // Buzón después de timbrar: Teléfono funcionando pero no contesta
-                    voicemailTitle = '📞 No Contestó - Redirigido a Buzón';
-                    voicemailMessage = 'El teléfono timbró pero no fue contestado. La llamada fue redirigida al buzón de voz.';
-                    console.log('%c📞 [BUZÓN DESPUÉS DE TIMBRAR] Teléfono funcionando pero no contestó', 
-                        'background: #ff9800; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
-                    
-                    // NO detener ringback - dejar que continúe timbrando hasta que el usuario decida
-                    // El ringback seguirá sonando porque el teléfono está funcionando
-                }
-
                 // LOG PÚBLICO: Siempre mostrar cuando se detecta buzón de voz
-                console.log('%c📬 [BUZÓN DE VOZ DETECTADO] Tipo: ' + voicemailType, 
-                    'background: #ff9800; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
+                console.log('%c📬 [BUZÓN DE VOZ DETECTADO]', 'background: #ff9800; color: white; font-weight: bold; padding: 5px 10px; border-radius: 5px; font-size: 14px;');
                 console.log('%c   📋 Motivo: ' + voicemailInfo, 'background: #ffc107; color: black; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
                 console.log('%c   📞 Número llamado: ' + (this.currentNumber || 'N/A'), 'background: #ffc107; color: black; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
-                console.log('%c   ℹ️ Estado: ' + (isImmediateVoicemail ? 'Sin timbrar (apagado/fuera de servicio)' : 'Timbrado pero no contestó'), 
-                    'background: #17a2b8; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;');
                 
                 if (this.config.debug_mode) {
                     console.log('   📋 Respuesta completa:', response);
-                    console.log('   📋 hasRung:', this.hasRung);
-                    console.log('   📋 ringingDetected:', this.ringingDetected);
                 }
 
-                // Sonido de alerta de buzón (silkyalert.mp3) y notificación visual
-                this._playVoicemailAlert();
-                this._showVoicemailNotification(voicemailTitle, voicemailMessage, isImmediateVoicemail);
+                // Mostrar notificación visual
+                this._showVoicemailNotification();
             } else {
                 // Log de diagnóstico cuando NO se detecta buzón (solo en debug_mode)
                 if (this.config.debug_mode) {
@@ -3281,25 +2734,9 @@ class WebRTCSoftphone {
         }
     }
 
-    _showVoicemailNotification(title = null, message = null, isImmediate = false) {
+    _showVoicemailNotification() {
         // Crear o actualizar notificación de buzón de voz
         let notif = document.getElementById('voicemail-notification');
-
-        // Títulos y mensajes por defecto si no se proporcionan
-        const defaultTitle = isImmediate 
-            ? '📴 Teléfono Apagado o Fuera de Servicio'
-            : '📞 No Contestó - Redirigido a Buzón';
-        const defaultMessage = isImmediate
-            ? 'La llamada fue redirigida directamente al buzón de voz sin timbrar. El teléfono está apagado o fuera de servicio.'
-            : 'El teléfono timbró pero no fue contestado. La llamada fue redirigida al buzón de voz.';
-        
-        const finalTitle = title || defaultTitle;
-        const finalMessage = message || defaultMessage;
-        
-        // Color de fondo según el tipo
-        const bgColor = isImmediate 
-            ? 'linear-gradient(135deg, #dc3545, #c82333)' // Rojo para apagado/fuera de servicio
-            : 'linear-gradient(135deg, #ff9800, #f57c00)'; // Naranja para no contestó
 
         if (!notif) {
             notif = document.createElement('div');
@@ -3308,14 +2745,13 @@ class WebRTCSoftphone {
                 position: fixed;
                 top: 80px;
                 right: 20px;
-                background: ${bgColor};
+                background: linear-gradient(135deg, #ff9800, #f57c00);
                 color: white;
                 padding: 20px 30px;
                 border-radius: 12px;
                 box-shadow: 0 4px 20px rgba(0,0,0,0.3);
                 z-index: 10001;
                 min-width: 300px;
-                max-width: 400px;
                 animation: slideInRight 0.3s ease-out;
                 font-family: Arial, sans-serif;
             `;
@@ -3337,22 +2773,19 @@ class WebRTCSoftphone {
                 `;
                 document.head.appendChild(style);
             }
-        } else {
-            // Actualizar color de fondo si ya existe
-            notif.style.background = bgColor;
         }
 
         notif.innerHTML = `
             <div style="display: flex; align-items: center; gap: 15px;">
                 <div style="flex: 1;">
                     <div style="font-size: 16px; font-weight: 700; margin-bottom: 5px;">
-                        ${finalTitle}
+                        <i class="fas fa-voicemail"></i> Buzón de Voz Detectado
                     </div>
                     <div style="font-size: 13px; opacity: 0.9;">
-                        ${finalMessage}
+                        La llamada ha sido redirigida al buzón de voz.
                     </div>
                     <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;">
-                        ${isImmediate ? 'El teléfono está apagado o fuera de servicio.' : 'Puedes dejar un mensaje o colgar.'}
+                        Puedes dejar un mensaje o colgar.
                     </div>
                 </div>
                 <div style="display: flex; gap: 10px;">
@@ -3397,89 +2830,65 @@ class WebRTCSoftphone {
         }
     }
 
+    /* -------------------------------------------------------------
+     * Utilidades
+     * ------------------------------------------------------------- */
     /**
-     * Opciones de PeerConnection para SIP.js (iceCheckingTimeout evita el default de 5000ms).
+     * Resuelve la URL base de assets/audio según la ubicación del script o la config.
+     * Evita rutas rotas como ../assets/audio desde index.php?action=...
      */
-    _buildPeerConnectionOptions(iceServers, { incoming = false } = {}) {
-        return {
-            iceCheckingTimeout: incoming ? 500 : 1500,
-            rtcConfiguration: {
-                iceServers,
-                iceTransportPolicy: this._getIceTransportPolicy(iceServers),
-                bundlePolicy: 'balanced',
-                rtcpMuxPolicy: 'negotiate',
-                iceCandidatePoolSize: incoming ? 0 : 4,
-                iceConnectionReceivingTimeout: 15000,
-                iceBackupCandidatePairPingInterval: 15000
-            }
-        };
+    _getAudioBaseUrl() {
+        const fromConfig = this.config?.audio_base_url;
+        if (fromConfig) {
+            const base = String(fromConfig).trim();
+            return base.endsWith('/') ? base : base + '/';
+        }
+
+        const script = document.querySelector('script[src*="softphone-web.js"]');
+        if (script?.src) {
+            try {
+                const scriptUrl = new URL(script.src, window.location.href);
+                return scriptUrl.href.replace(/\/js\/[^/]+$/, '/audio/');
+            } catch (_) { /* fallback abajo */ }
+        }
+
+        const path = window.location.pathname || '/';
+        const dir = path.replace(/\/[^/]*$/, '/') || '/';
+        return new URL('assets/audio/', window.location.origin + dir).href;
     }
 
-    /**
-     * Normaliza URLs ICE al formato que exige RTCPeerConnection (stun: / turns:).
-     */
-    _normalizeIceServers(iceServers) {
-        if (!Array.isArray(iceServers)) return [];
-        return iceServers.map((server) => {
-            if (!server || typeof server !== 'object') return server;
-            const normalizeUrl = (url) => {
-                const u = String(url || '').trim();
-                if (!u) return u;
-                if (/^(stun|turn|turns):/i.test(u)) return u;
-                return `stun:${u}`;
-            };
-            if (server.urls) {
-                const urls = Array.isArray(server.urls)
-                    ? server.urls.map(normalizeUrl)
-                    : normalizeUrl(server.urls);
-                return Object.assign({}, server, { urls });
-            }
-            if (server.url) {
-                return Object.assign({}, server, { url: normalizeUrl(server.url) });
-            }
-            return server;
-        });
+    _audioUrl(filename) {
+        const base = this.audioBaseUrl || this._getAudioBaseUrl();
+        return base + String(filename).replace(/^\//, '');
     }
 
     _getIceServers() {
         // PRIORIDAD: Si estamos en red local (según la configuración), no usar STUN
+        // Esto evita problemas de NAT hairpinning y mejora el rendimiento (evita audio entrecortado)
+        // Verificamos esto PRIMERO para anular cualquier servidor STUN configurado si es local
         if (this.config.is_local_network === true) {
             if (this.config.debug_mode) {
                 console.log('📡 [WebRTC] Modo LAN detectado (Prioridad Alta): Sin STUN (conexión directa)');
             }
-            return [];
+            return []; // Array vacío = sin STUN, conexión directa
         }
 
-        let servers = [];
-
+        // Si hay servidores ICE configurados explícitamente y NO es local, usarlos
         if (this.config.iceServers && Array.isArray(this.config.iceServers) && this.config.iceServers.length) {
-            servers = this.config.iceServers;
-        } else if (this.config.stun_server) {
-            const raw = String(this.config.stun_server).trim();
-            servers = [{ urls: /^stun:/i.test(raw) ? raw : `stun:${raw}` }];
-        } else {
-            if (this.config.debug_mode) {
-                console.log('📡 [WebRTC] Modo WAN: Usando STUN público');
-            }
-            servers = [{ urls: 'stun:stun.l.google.com:19302' }];
+            return this.config.iceServers;
         }
 
-        const normalized = this._normalizeIceServers(servers);
+        // Modo WAN: Usar STUN para atravesar NAT
+        if (this.config.stun_server) {
+            return [{ urls: this.config.stun_server.startsWith('stun:') ? this.config.stun_server : `stun:${this.config.stun_server}` }];
+        }
 
-        // #region agent log
-        fetch('http://127.0.0.1:7850/ingest/71835b90-65bf-4660-be07-f9b977e3b166',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e469ff'},body:JSON.stringify({sessionId:'e469ff',location:'softphone-web.js:_getIceServers',message:'ICE servers normalized',data:{raw:servers,normalized,isLocal:!!this.config.is_local_network},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
-        // #endregion
-
-        return normalized;
+        // Fallback: STUN público de Google
+        if (this.config.debug_mode) {
+            console.log('📡 [WebRTC] Modo WAN: Usando STUN público');
+        }
+        return [{ urls: 'stun:stun.l.google.com:19302' }];
     }
-
-    /**
-     * Política ICE: siempre 'all'. Usar 'relay' sin servidor TURN impide candidatos host y retrasa/falla la llamada en LAN.
-     */
-    _getIceTransportPolicy() {
-        return 'all';
-    }
-
     _patchUriClone(uri) {
         if (!uri || typeof uri !== 'object') return uri;
         if (typeof uri.clone === 'function') return uri;
@@ -3491,15 +2900,8 @@ class WebRTCSoftphone {
         try {
             const uri = inv.remoteIdentity?.uri;
             if (uri?.user) return uri.user;
-            if (uri?.toString) {
-                const match = uri.toString().match(/sip:([^@;]+)@/);
-                if (match && match[1]) return match[1];
-            }
-            const from = inv.request?.from;
-            if (from?.uri?.user) return from.uri.user;
-            if (from?.displayName) return from.displayName;
             const h = inv.request?.headers?.From;
-            const m = h && h.match(/sip:([^@;]+)@/);
+            const m = h && h.match(/sip:(\d+)@/);
             if (m && m[1]) return m[1];
         } catch (_) { }
         return null;
