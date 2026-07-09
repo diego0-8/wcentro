@@ -14,6 +14,13 @@ if (!isset($usuarios) || !is_array($usuarios)) {
 if (!isset($estadisticas) || !is_array($estadisticas)) {
     $estadisticas = [];
 }
+if (!isset($campanas) || !is_array($campanas)) {
+    $campanas = [];
+}
+
+$campanasLista = array_values(array_filter($campanas, function ($c) {
+    return strtolower($c['estado'] ?? '') === 'activa';
+}));
 
 $coordinadoresActivos = array_values(array_filter($coordinadores, function ($c) {
     return strtolower($c['estado'] ?? '') === 'activo';
@@ -110,7 +117,7 @@ if ($asignacionesExportJson === false) {
                 <div class="main-tabs">
                     <span class="tab-btn active" data-tab="estadisticas">ESTADÍSTICAS</span>
                     <span class="tab-btn" data-tab="usuarios">USUARIOS</span>
-                    <span class="tab-btn" data-tab="asignaciones">ASIGNACIONES</span>
+                    <span class="tab-btn" data-tab="asignaciones">CAMPAÑAS</span>
                     <span class="tab-btn" data-tab="clientes">CLIENTES</span>
                     <span class="tab-btn" data-tab="actividad">ACTIVIDAD</span>
                 </div>
@@ -360,94 +367,59 @@ if ($asignacionesExportJson === false) {
                         </div>
                     </div>
 
-                    <!-- PESTAÑA 3: ASIGNACIONES -->
+                    <!-- PESTAÑA 3: CAMPAÑAS -->
                     <div class="tab-content" id="tab-asignaciones" style="display: none;">
                         <div class="left-content">
                             <div class="asignaciones-header">
-                                <h4 style="margin-top: 0;">Gestión de Asignaciones</h4>
+                                <h4 style="margin-top: 0;">Gestión de Campañas</h4>
                                 <div class="table-actions">
-                                    <button class="btn btn-primary" onclick="openModal('asignar-personal')">
-                                        <i class="fas fa-user-plus"></i> Nueva Asignación
+                                    <button class="btn btn-primary" onclick="window.location.href='index.php?action=crear_campana'">
+                                        <i class="fas fa-bullhorn"></i> Nueva Campaña
                                     </button>
-                                    <button class="btn btn-sm btn-secondary" onclick="refreshAsignaciones()">
-                                        <i class="fas fa-sync-alt"></i> Actualizar
+                                    <button class="btn btn-sm btn-secondary" onclick="window.location.href='index.php?action=list_campanas'">
+                                        <i class="fas fa-external-link-alt"></i> Ver módulo completo
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="window.location.href='index.php?action=admin_auditoria_coordinadores'">
+                                        <i class="fas fa-clock-rotate-left"></i> Historial coordinadores
                                     </button>
                                 </div>
                             </div>
                             
-                            <!-- Tabla de asignaciones -->
                             <div class="asignaciones-table-container">
                                 <div class="table-responsive">
                                     <table class="asignaciones-table">
                                         <thead>
                                             <tr>
                                                 <th>ID</th>
-                                                <th>Asesor</th>
-                                                <th>Coordinador</th>
+                                                <th>Nombre</th>
                                                 <th>Estado</th>
-                                                <th>Fecha Asignación</th>
-                                                <th>Creado Por</th>
+                                                <th>Coordinadores</th>
+                                                <th>Asesores</th>
+                                                <th>Bases</th>
                                                 <th>Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <?php if (!empty($asignacionesLista)): ?>
-                                                <?php foreach ($asignacionesLista as $asignacion): ?>
-                                                    <tr data-asignacion-id="<?php echo $asignacion['id']; ?>">
-                                                        <td><?php echo $asignacion['id']; ?></td>
+                                            <?php if (!empty($campanasLista)): ?>
+                                                <?php foreach ($campanasLista as $camp): ?>
+                                                    <tr>
+                                                        <td><?php echo (int) ($camp['id'] ?? 0); ?></td>
+                                                        <td><strong><?php echo htmlspecialchars($camp['nombre'] ?? ''); ?></strong></td>
+                                                        <td><?php echo htmlspecialchars($camp['estado'] ?? ''); ?></td>
+                                                        <td><?php echo (int) ($camp['total_coordinadores'] ?? 0); ?></td>
+                                                        <td><?php echo (int) ($camp['total_asesores'] ?? 0); ?></td>
+                                                        <td><?php echo (int) ($camp['total_bases'] ?? 0); ?></td>
                                                         <td>
-                                                            <div class="user-info">
-                                                                <div class="user-avatar">
-                                                                    <?php echo strtoupper(substr($asignacion['asesor_nombre'], 0, 1)); ?>
-                                                                </div>
-                                                                <div class="user-details">
-                                                                    <strong><?php echo htmlspecialchars($asignacion['asesor_nombre']); ?></strong>
-                                                                    <small>Cédula: <?php echo $asignacion['asesor_cedula']; ?></small>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td>
-                                                            <div class="user-info">
-                                                                <div class="user-avatar">
-                                                                    <?php echo strtoupper(substr($asignacion['coordinador_nombre'], 0, 1)); ?>
-                                                                </div>
-                                                                <div class="user-details">
-                                                                    <strong><?php echo htmlspecialchars($asignacion['coordinador_nombre']); ?></strong>
-                                                                    <small>Cédula: <?php echo $asignacion['coordinador_cedula']; ?></small>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td>
-                                                            <span class="estado-badge estado-<?php echo strtolower($asignacion['estado'] ?? 'activa'); ?>">
-                                                                <i class="fas fa-circle"></i>
-                                                                <?php echo ucfirst($asignacion['estado'] ?? 'activa'); ?>
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <span class="fecha-asignacion">
-                                                                <?php echo date('d/m/Y H:i', strtotime($asignacion['fecha_asignacion'])); ?>
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <span class="creado-por">
-                                                                <?php echo htmlspecialchars($asignacion['creador_nombre'] ?? 'Sistema'); ?>
-                                                            </span>
-                                                        </td>
-                                                        <td>
-                                                            <div class="action-buttons">
-                                                                <button class="btn-action btn-liberar" onclick="liberarAsignacion(<?php echo $asignacion['id']; ?>)" title="Liberar Asesor">
-                                                                    <i class="fas fa-unlink"></i>
-                                                                </button>
-                                                            </div>
+                                                            <a class="btn btn-sm btn-primary" href="index.php?action=gestionar_campana&id=<?php echo (int) ($camp['id'] ?? 0); ?>">Gestionar</a>
                                                         </td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             <?php else: ?>
                                                 <tr>
                                                     <td colspan="7" class="no-data">
-                                                        <i class="fas fa-user-friends"></i>
-                                                        <p>No hay asignaciones registradas</p>
-                                                        <small>Las asignaciones aparecerán aquí una vez que se creen</small>
+                                                        <i class="fas fa-bullhorn"></i>
+                                                        <p>No hay campañas registradas</p>
+                                                        <small>Cree una campaña y asigne coordinadores y asesores</small>
                                                     </td>
                                                 </tr>
                                             <?php endif; ?>
@@ -458,39 +430,39 @@ if ($asignacionesExportJson === false) {
                         </div>
                         
                         <aside class="right-sidebar">
-                            <h4>Resumen de Asignaciones</h4>
+                            <h4>Resumen de Campañas</h4>
                             <div class="stats-summary">
                                 <div class="stat-item">
-                                    <i class="fas fa-users"></i>
+                                    <i class="fas fa-bullhorn"></i>
                                     <div>
-                                        <span class="stat-number"><?php echo $totalAsignaciones; ?></span>
-                                        <span class="stat-label">Total Asignaciones</span>
+                                        <span class="stat-number"><?php echo $estadisticas['total_campanas'] ?? count($campanasLista); ?></span>
+                                        <span class="stat-label">Total Campañas</span>
+                                    </div>
+                                </div>
+                                <div class="stat-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <div>
+                                        <span class="stat-number"><?php echo $estadisticas['campanas_activas'] ?? 0; ?></span>
+                                        <span class="stat-label">Activas</span>
                                     </div>
                                 </div>
                                 <div class="stat-item">
                                     <i class="fas fa-user-check"></i>
                                     <div>
-                                        <span class="stat-number"><?php echo $asignacionesActivasCount; ?></span>
-                                        <span class="stat-label">Activas</span>
-                                    </div>
-                                </div>
-                                <div class="stat-item">
-                                    <i class="fas fa-user-times"></i>
-                                    <div>
-                                        <span class="stat-number"><?php echo $asignacionesInactivasCount; ?></span>
-                                        <span class="stat-label">Inactivas</span>
+                                        <span class="stat-number"><?php echo $estadisticas['asesores_asignados'] ?? 0; ?></span>
+                                        <span class="stat-label">Asesores en campañas</span>
                                     </div>
                                 </div>
                             </div>
                             
                             <div class="quick-actions">
-                                <button class="action-btn" onclick="openModal('asignar-personal')">
-                                    <i class="fas fa-user-plus"></i>
-                                    Nueva Asignación
+                                <button class="action-btn" onclick="window.location.href='index.php?action=crear_campana'">
+                                    <i class="fas fa-bullhorn"></i>
+                                    Nueva Campaña
                                 </button>
-                                <button class="action-btn" onclick="exportarAsignaciones()">
-                                    <i class="fas fa-download"></i>
-                                    Exportar Lista
+                                <button class="action-btn" onclick="window.location.href='index.php?action=list_campanas'">
+                                    <i class="fas fa-cog"></i>
+                                    Gestionar Campañas
                                 </button>
                                 <button class="action-btn" onclick="refreshAsignaciones()">
                                     <i class="fas fa-sync"></i>
@@ -531,8 +503,8 @@ if ($asignacionesExportJson === false) {
                                 <button type="button" class="btn btn-primary" onclick="window.location.href='index.php?action=admin_reportes'">
                                     <i class="fas fa-upload"></i> Cargar Historial CSV
                                 </button>
-                                <button type="button" class="btn btn-secondary" onclick="window.location.href='index.php?action=coordinador_gestion'">
-                                    <i class="fas fa-database"></i> Carga de Bases (Coordinador)
+                                <button type="button" class="btn btn-secondary" onclick="window.location.href='index.php?action=list_campanas'">
+                                    <i class="fas fa-bullhorn"></i> Gestionar Campañas
                                 </button>
                             </div>
                         </div>

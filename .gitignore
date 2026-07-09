@@ -1,2 +1,19 @@
-# Imágenes locales (no subir al repositorio)
+# Imágenes
 img/
+
+# Scripts locales y migraciones
+/scripts/
+/sql/
+*.sql
+
+# Tests
+/tests/
+/e2e/
+
+# Documentación local
+*.md
+HANDOFF.md
+
+# Logs y diagnósticos
+log_carga_diagnostico.txt
+.cursor/

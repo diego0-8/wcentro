@@ -1106,6 +1106,27 @@ function disableButtons() {
     console.log('Coord_gestion.js: Botones deshabilitados');
 }
 
+function removeFile() {
+    selectedFile = null;
+
+    const fileInfo = document.getElementById('file-info');
+    if (fileInfo) {
+        fileInfo.style.display = 'none';
+    }
+
+    const uploadZone = document.getElementById('upload-zone-' + currentUploadType);
+    if (uploadZone) {
+        uploadZone.style.display = 'block';
+    }
+
+    const csvNueva = document.getElementById('csv-file-nueva');
+    const csvExistente = document.getElementById('csv-file-existente');
+    if (csvNueva) csvNueva.value = '';
+    if (csvExistente) csvExistente.value = '';
+
+    disableButtons();
+}
+
 // ========================================
 // FUNCIONES DE CARGA DE BASES EXISTENTES
 // ========================================
@@ -1299,7 +1320,7 @@ function procesarArchivoReal(formData) {
         restaurarBotonSubir();
         mostrarResultado({
             success: false,
-            message: 'Tiempo de espera agotado. Para archivos muy grandes use: php scripts/cargar_ejemplo_csv.php --csv=ruta/archivo.csv --base="Nombre Base"'
+            message: 'Tiempo de espera agotado. Para archivos muy grandes, divida el CSV en partes más pequeñas o aumente los límites de PHP (memory_limit y max_execution_time).'
         }, 'error');
     };
     

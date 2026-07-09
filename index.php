@@ -32,6 +32,66 @@ if ($action === 'logout') {
     exit;
 }
 
+// ----- Rutas de campañas (administrador) -----
+$rutasCampanasAdmin = [
+    'list_campanas', 'crear_campana', 'editar_campana', 'gestionar_campana',
+    'asignar_coordinador_campana', 'liberar_coordinador_campana',
+    'asignar_asesor_campana', 'liberar_asesor_campana', 'ver_auditoria_campana',
+    'inhabilitar_campana', 'habilitar_campana', 'admin_auditoria_coordinadores',
+    'admin_asignar_personal',
+];
+
+if (in_array($action, $rutasCampanasAdmin, true)) {
+    if (empty($_SESSION['usuario_id']) || strtolower($_SESSION['usuario_rol'] ?? '') !== 'administrador') {
+        header('Location: index.php?action=login');
+        exit;
+    }
+    require_once __DIR__ . '/controllers/AdminCampanaController.php';
+    $campanaCtrl = new AdminCampanaController();
+    switch ($action) {
+        case 'admin_asignar_personal':
+            $campanaCtrl->asignarPersonalRedirect();
+            break;
+        case 'list_campanas':
+            $campanaCtrl->listCampanas();
+            break;
+        case 'crear_campana':
+            $campanaCtrl->crearCampana();
+            break;
+        case 'editar_campana':
+            $campanaCtrl->editarCampana();
+            break;
+        case 'gestionar_campana':
+            $campanaCtrl->gestionarCampana();
+            break;
+        case 'asignar_coordinador_campana':
+            $campanaCtrl->asignarCoordinadorCampana();
+            break;
+        case 'liberar_coordinador_campana':
+            $campanaCtrl->liberarCoordinadorCampana();
+            break;
+        case 'asignar_asesor_campana':
+            $campanaCtrl->asignarAsesorCampana();
+            break;
+        case 'liberar_asesor_campana':
+            $campanaCtrl->liberarAsesorCampana();
+            break;
+        case 'ver_auditoria_campana':
+            $campanaCtrl->verAuditoriaCampana();
+            break;
+        case 'inhabilitar_campana':
+            $campanaCtrl->inhabilitarCampana();
+            break;
+        case 'habilitar_campana':
+            $campanaCtrl->habilitarCampana();
+            break;
+        case 'admin_auditoria_coordinadores':
+            $campanaCtrl->auditoriaCoordinadoresGlobal();
+            break;
+    }
+    exit;
+}
+
 // ----- Ruta para HybridUpdater (devuelve JSON; evita error "Unexpected token '<'" cuando no existía la acción) -----
 if ($action === 'check_updates') {
     header('Content-Type: application/json');
@@ -97,28 +157,13 @@ if (in_array($action, $rutasAjax, true)) {
                 
             case 'crear_asignacion':
             case 'asignar_personal':
-                require_once __DIR__ . '/controllers/AdminAsignacionController.php';
-                $controller = new AdminAsignacionController();
-                $resultado = $controller->crear();
-                break;
-                
             case 'actualizar_asignacion':
-                require_once __DIR__ . '/controllers/AdminAsignacionController.php';
-                $controller = new AdminAsignacionController();
-                $resultado = $controller->actualizar();
-                break;
-                
             case 'eliminar_asignacion':
             case 'liberar_asignacion':
-                require_once __DIR__ . '/controllers/AdminAsignacionController.php';
-                $controller = new AdminAsignacionController();
-                // Liberar es cambiar estado a inactiva
-                if ($action === 'liberar_asignacion') {
-                    $_POST['estado'] = 'inactiva';
-                    $resultado = $controller->actualizar();
-                } else {
-                    $resultado = $controller->eliminar();
-                }
+                $resultado = [
+                    'success' => false,
+                    'message' => 'Las asignaciones directas fueron reemplazadas por campañas. Use index.php?action=list_campanas',
+                ];
                 break;
                 
             case 'cargar_historial_csv':
@@ -241,9 +286,10 @@ if (in_array($action, $rutasCoordAjax, true)) {
                 $resultado = $ctrl->crearAsignacionClientes();
                 break;
             case 'obtener_tareas_coordinador':
-            case 'asignar_clientes':
-                // Alias para compatibilidad
                 $resultado = $ctrl->obtenerTareasCoordinador();
+                break;
+            case 'asignar_clientes':
+                $resultado = $ctrl->crearAsignacionClientes();
                 break;
             case 'completar_tarea':
             case 'completar_asignacion':
@@ -362,7 +408,7 @@ if (in_array($action, $rutasCoordAjax, true)) {
             $payload['sugerencias'] = [
                 'Revise log_carga_diagnostico.txt en la raíz del proyecto.',
                 'Aumente memory_limit y max_execution_time en php.ini de XAMPP.',
-                'Para archivos muy grandes use: php scripts/cargar_ejemplo_csv.php --csv=ruta --base="Nombre"',
+                'Para archivos muy grandes, divida el CSV en partes más pequeñas o aumente los límites de PHP.',
             ];
         }
         echo json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -500,7 +546,8 @@ $requiereSesion = [
     'dashboard', 'admin_usuarios', 'admin_asignaciones', 'admin_reportes', 'admin_configuracion',
     'coordinador_dashboard', 'coordinador_gestion', 'coordinador_exporte',
     'asesor_dashboard', 'asesor_gestionar',
-    'admin_crear_usuario', 'admin_asignar_personal',
+    'admin_crear_usuario', 'list_campanas', 'crear_campana', 'editar_campana',
+    'gestionar_campana', 'ver_auditoria_campana',
 ];
 
 if (in_array($action, $requiereSesion, true) && empty($_SESSION['usuario_id'])) {
@@ -516,13 +563,49 @@ $vistas = [
     'admin_reportes'          => 'admin_reportes.php',
     'admin_configuracion'     => 'admin_dashboard.php',
     'admin_crear_usuario'     => 'admin_crear_usuario.php',
-    'admin_asignar_personal'  => 'admin_asignar_personal.php',
+    'list_campanas'           => 'admin_campanas_list.php',
+    'crear_campana'           => 'admin_campana_form.php',
+    'editar_campana'          => 'admin_campana_form.php',
+    'gestionar_campana'       => 'admin_gestionar_campana.php',
+    'ver_auditoria_campana'   => 'admin_auditoria_campana.php',
     'coordinador_dashboard'   => 'Coord_dashboard.php',
     'coordinador_gestion'     => 'Coord_gestion.php',
     'coordinador_exporte'     => 'coord_export.php',
     'asesor_dashboard'        => 'asesor_dashboard.php',
     'asesor_gestionar'        => 'asesor_gestionar.php',
 ];
+
+// Autorización por rol: cada vista solo es accesible para su rol
+$vistasPorRol = [
+    'administrador' => [
+        'dashboard', 'admin_usuarios', 'admin_asignaciones', 'admin_reportes',
+        'admin_configuracion', 'admin_crear_usuario', 'list_campanas', 'crear_campana',
+        'editar_campana', 'gestionar_campana', 'ver_auditoria_campana',
+    ],
+    'coordinador' => [
+        'coordinador_dashboard', 'coordinador_gestion', 'coordinador_exporte',
+    ],
+    'asesor' => [
+        'asesor_dashboard', 'asesor_gestionar',
+    ],
+];
+
+if (isset($vistas[$action])) {
+    $rolActual = strtolower(trim((string) ($_SESSION['usuario_rol'] ?? '')));
+    $accionesPermitidas = $vistasPorRol[$rolActual] ?? [];
+    if (!in_array($action, $accionesPermitidas, true)) {
+        if ($rolActual === 'administrador') {
+            header('Location: index.php?action=dashboard');
+        } elseif ($rolActual === 'coordinador') {
+            header('Location: index.php?action=coordinador_dashboard');
+        } elseif ($rolActual === 'asesor') {
+            header('Location: index.php?action=asesor_dashboard');
+        } else {
+            header('Location: index.php?action=login');
+        }
+        exit;
+    }
+}
 
 if (isset($vistas[$action])) {
     $vistaArchivo = $vistas[$action];
@@ -535,6 +618,7 @@ if (isset($vistas[$action])) {
         $datos = $controller->obtenerDatosDashboard();
         $usuarios = $datos['usuarios'];
         $asignaciones = $datos['asignaciones'];
+        $campanas = $datos['campanas'] ?? [];
         $estadisticas = $datos['estadisticas'];
         $coordinadores = $datos['coordinadores'];
     }
@@ -547,17 +631,6 @@ if (isset($vistas[$action])) {
         $bases = ($resBases['success'] && !empty($resBases['bases'])) ? $resBases['bases'] : [];
     }
     
-    // Preparar datos para admin_asignar_personal.php
-    if ($vistaArchivo === 'admin_asignar_personal.php') {
-        require_once __DIR__ . '/controllers/AdminDashboardController.php';
-        $controller = new AdminDashboardController();
-        $datos = $controller->obtenerDatosDashboard();
-        $asignaciones = $datos['asignaciones'];
-        $estadisticas = $datos['estadisticas'];
-        $coordinadores = array_values(array_filter($datos['coordinadores'], function ($u) {
-            return strtolower($u['estado'] ?? '') === 'activo';
-        }));
-    }
     
     // Datos para vistas del coordinador (dashboard y gestión)
     if ($vistaArchivo === 'Coord_dashboard.php' || $vistaArchivo === 'Coord_gestion.php') {
@@ -570,6 +643,7 @@ if (isset($vistas[$action])) {
         if (isset($datosCoord['estadisticas_bases'])) {
             $estadisticas['estadisticas_bases'] = $datosCoord['estadisticas_bases'];
         }
+        $historial_auditoria = $datosCoord['historial_auditoria'] ?? [];
     }
     
     // Datos para vista del asesor (dashboard)

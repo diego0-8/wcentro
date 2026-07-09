@@ -375,6 +375,19 @@ function initTabsDashboard() {
     });
 }
 
+function tabDesdeAction() {
+    try {
+        var params = new URLSearchParams(window.location.search);
+        var action = params.get('action') || 'dashboard';
+        if (action === 'admin_usuarios') return 'usuarios';
+        if (action === 'admin_asignaciones') return 'asignaciones';
+        if (action === 'admin_configuracion') return 'estadisticas';
+        return 'estadisticas';
+    } catch (e) {
+        return 'estadisticas';
+    }
+}
+
 function initDashboard() {
     try {
         inicializarTooltips();
@@ -387,6 +400,11 @@ function initDashboard() {
         document.head.appendChild(style);
     } catch (e) {}
     initTabsDashboard();
+    try {
+        cambiarTab(tabDesdeAction());
+    } catch (e) {
+        console.warn('admin-dashboard: tab inicial', e);
+    }
 }
 
 // Inicializar cuando el DOM esté listo (o ya si el script se cargó tarde)

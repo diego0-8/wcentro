@@ -1072,11 +1072,12 @@ $fecha_min_volver_llamar = (new DateTimeImmutable('now', new DateTimeZone('Ameri
         }
         
         $webrtc_config = getWebRTCConfig();
-        
-        // Debug: Verificar valores antes de pasarlos a JavaScript
-        error_log('[SOFTPHONE DEBUG] Configuración obtenida:');
-        error_log('  - sip_domain: ' . ($webrtc_config['sip_domain'] ?? 'NO DEFINIDO'));
-        error_log('  - wss_server: ' . ($webrtc_config['wss_server'] ?? 'NO DEFINIDO'));
+
+        if (defined('ASTERISK_DEBUG_MODE') && ASTERISK_DEBUG_MODE) {
+            error_log('[SOFTPHONE DEBUG] Configuración obtenida:');
+            error_log('  - sip_domain: ' . ($webrtc_config['sip_domain'] ?? 'NO DEFINIDO'));
+            error_log('  - wss_server: ' . ($webrtc_config['wss_server'] ?? 'NO DEFINIDO'));
+        }
 
         // Usar datos frescos de la base de datos si están disponibles (prioridad sobre sesión)
         // Prioridad: extension_telefono y clave_extension (nuevos campos), luego extension y sip_password (legacy)
@@ -1101,12 +1102,12 @@ $fecha_min_volver_llamar = (new DateTimeImmutable('now', new DateTimeZone('Ameri
         <script src="assets/js/softphone-web.js"></script>
         <script>
             // Configuración del softphone
-            // DEBUG: Verificar valores desde PHP antes de crear el objeto
             <?php
-            // Debug: Verificar valores directamente desde PHP
-            error_log('[SOFTPHONE DEBUG] ASTERISK_SIP_DOMAIN definido: ' . (defined('ASTERISK_SIP_DOMAIN') ? ASTERISK_SIP_DOMAIN : 'NO DEFINIDO'));
-            error_log('[SOFTPHONE DEBUG] webrtc_config[sip_domain]: ' . ($webrtc_config['sip_domain'] ?? 'NO DEFINIDO'));
-            error_log('[SOFTPHONE DEBUG] webrtc_config[wss_server]: ' . ($webrtc_config['wss_server'] ?? 'NO DEFINIDO'));
+            if (defined('ASTERISK_DEBUG_MODE') && ASTERISK_DEBUG_MODE) {
+                error_log('[SOFTPHONE DEBUG] ASTERISK_SIP_DOMAIN definido: ' . (defined('ASTERISK_SIP_DOMAIN') ? ASTERISK_SIP_DOMAIN : 'NO DEFINIDO'));
+                error_log('[SOFTPHONE DEBUG] webrtc_config[sip_domain]: ' . ($webrtc_config['sip_domain'] ?? 'NO DEFINIDO'));
+                error_log('[SOFTPHONE DEBUG] webrtc_config[wss_server]: ' . ($webrtc_config['wss_server'] ?? 'NO DEFINIDO'));
+            }
             ?>
             const webrtcConfig = {
                 wss_server: '<?php echo $webrtc_config['wss_server']; ?>',

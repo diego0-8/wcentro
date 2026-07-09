@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../models/Usuario.php';
 require_once __DIR__ . '/../models/Asignacion.php';
+require_once __DIR__ . '/../models/Campana.php';
 require_once __DIR__ . '/../models/Cliente.php';
 require_once __DIR__ . '/../models/Tarea.php';
 require_once __DIR__ . '/../models/BaseCliente.php';
@@ -23,22 +24,17 @@ class CoordDashboardController {
                 'estadisticas' => $this->estadisticasVacias(),
                 'asesores' => [],
                 'estadisticas_bases' => [],
+                'historial_auditoria' => [],
             ];
         }
 
         try {
-            $asignacionModel = new Asignacion();
+            $campanaModel = new Campana();
             $usuarioModel = new Usuario();
             $clienteModel = new Cliente();
 
-            // Asignaciones activas de este coordinador
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            if (!is_array($asignaciones)) {
-                $asignaciones = [];
-            }
-
-            // Cédulas de asesores asignados a este coordinador
-            $cedulasAsesores = array_unique(array_column($asignaciones, 'asesor_cedula'));
+            $asesoresLista = $campanaModel->getAsesoresDelCoordinador($coordinadorCedula);
+            $cedulasAsesores = array_unique(array_column($asesoresLista, 'cedula'));
 
             // Cargar datos de cada asesor con estadísticas reales
             $tareaModel = new Tarea();
@@ -191,11 +187,13 @@ class CoordDashboardController {
 
             $estadisticas = $this->calcularEstadisticas($asesores, $clientes);
             $estadisticasBases = $this->obtenerEstadisticasBases($coordinadorCedula);
+            $historialAuditoria = $campanaModel->getAuditoriaRecienteCoordinador((string) $coordinadorCedula, 5);
 
             return [
                 'estadisticas' => $estadisticas,
                 'asesores' => $asesores,
                 'estadisticas_bases' => $estadisticasBases,
+                'historial_auditoria' => $historialAuditoria,
             ];
         } catch (Exception $e) {
             error_log("CoordDashboardController: " . $e->getMessage());
@@ -203,6 +201,7 @@ class CoordDashboardController {
                 'estadisticas' => $this->estadisticasVacias(),
                 'asesores' => [],
                 'estadisticas_bases' => [],
+                'historial_auditoria' => [],
             ];
         }
     }

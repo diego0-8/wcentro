@@ -139,6 +139,47 @@
                                 </div>
                             </div>
 
+                            <?php
+                            $historial_auditoria = $historial_auditoria ?? [];
+                            require_once __DIR__ . '/../helpers/auditoria.php';
+                            ?>
+                            <h4 class="section-title" style="margin-top: 28px;">Mis acciones (últimos 5 días)</h4>
+                            <div class="coord-audit-historial">
+                                <?php if (empty($historial_auditoria)): ?>
+                                    <p class="coord-audit-empty">No hay acciones registradas en los últimos 5 días.</p>
+                                <?php else: ?>
+                                    <ul class="coord-audit-list">
+                                        <?php foreach ($historial_auditoria as $item):
+                                            $accionKey = $item['accion'] ?? '';
+                                            $accionLabel = auditoriaEtiquetaAccion($accionKey);
+                                            $lineasDetalle = auditoriaDetalleLineas($item['detalle'] ?? null, $accionKey);
+                                        ?>
+                                            <li class="coord-audit-item">
+                                                <div class="coord-audit-item-head">
+                                                    <span class="coord-audit-fecha"><?php echo htmlspecialchars(auditoriaFormatearFecha($item['fecha'] ?? null)); ?></span>
+                                                    <span class="coord-audit-accion"><?php echo htmlspecialchars($accionLabel); ?></span>
+                                                </div>
+                                                <div class="coord-audit-item-body">
+                                                    <?php if (!empty($item['campana_nombre'])): ?>
+                                                        <span><i class="fas fa-bullhorn"></i> <?php echo htmlspecialchars($item['campana_nombre']); ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($item['entidad'])): ?>
+                                                        <span><?php echo htmlspecialchars(auditoriaEtiquetaEntidad($item['entidad'], $item['entidad_id'] ?? null)); ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($lineasDetalle)): ?>
+                                                        <ul class="coord-audit-detalle-list">
+                                                            <?php foreach ($lineasDetalle as $linea): ?>
+                                                                <li><?php echo htmlspecialchars($linea); ?></li>
+                                                            <?php endforeach; ?>
+                                                        </ul>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                <?php endif; ?>
+                            </div>
+
                             <!-- Porcentajes de Rendimiento -->
                             <h4>Rendimiento del Equipo</h4>
                             <div class="form-section">

@@ -448,19 +448,29 @@ class AdminReportesController {
     private function obtenerCoordinadorParaTarea($base) {
         $db = getDBConnection();
         $baseId = (int) ($base['id'] ?? 0);
-        $creadoPor = null;
         if ($baseId > 0) {
+            require_once __DIR__ . '/../models/Campana.php';
+            $campanaModel = new Campana();
+            if ($campanaModel->tablaExiste()) {
+                $campanaId = $campanaModel->obtenerCampanaIdPorBase($baseId);
+                if ($campanaId) {
+                    $coords = $campanaModel->getCoordinadoresByCampana($campanaId);
+                    if (!empty($coords[0]['cedula'])) {
+                        return $coords[0]['cedula'];
+                    }
+                }
+            }
             $st = $db->prepare("SELECT creado_por FROM base_clientes WHERE id_base = ? LIMIT 1");
             $st->execute([$baseId]);
             $r = $st->fetch(PDO::FETCH_ASSOC);
             $creadoPor = $r['creado_por'] ?? null;
-        }
-        if ($creadoPor) {
-            $stmt = $db->prepare("SELECT cedula, rol FROM usuarios WHERE cedula = ? AND estado = 'Activo'");
-            $stmt->execute([$creadoPor]);
-            $u = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($u && strtolower($u['rol'] ?? '') === 'coordinador') {
-                return $u['cedula'];
+            if ($creadoPor) {
+                $stmt = $db->prepare("SELECT cedula, rol FROM usuarios WHERE cedula = ? AND estado = 'Activo'");
+                $stmt->execute([$creadoPor]);
+                $u = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($u && strtolower($u['rol'] ?? '') === 'coordinador') {
+                    return $u['cedula'];
+                }
             }
         }
         $stmt = $db->query("SELECT cedula FROM usuarios WHERE rol = 'coordinador' AND estado = 'Activo' LIMIT 1");

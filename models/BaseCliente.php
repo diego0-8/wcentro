@@ -43,14 +43,19 @@ class BaseCliente {
      * @param string $nombre
      * @param string $estado activo|inactivo
      * @param string|null $creadoPor cedula del usuario (si la tabla tiene creado_por FK)
+     * @param int|null $campanaId campaña a la que pertenece la base
      */
-    public function crear($nombre, $estado = 'activo', $creadoPor = null) {
+    public function crear($nombre, $estado = 'activo', $creadoPor = null, $campanaId = null) {
         if (!$this->tablaExiste()) {
             return false;
         }
         $creadoPor = $creadoPor ?: ($_SESSION['usuario_cedula'] ?? $_SESSION['usuario_id'] ?? null);
+        $tieneCampana = $this->columnaExiste('campana_id');
         try {
-            if ($creadoPor) {
+            if ($creadoPor && $tieneCampana && $campanaId) {
+                $stmt = $this->db->prepare("INSERT INTO base_clientes (nombre, estado, creado_por, campana_id, total_clientes, TOTAL_OBLIGACIONES) VALUES (?, ?, ?, ?, 0, 0)");
+                $stmt->execute([trim($nombre), $estado, $creadoPor, (int) $campanaId]);
+            } elseif ($creadoPor) {
                 $stmt = $this->db->prepare("INSERT INTO base_clientes (nombre, estado, creado_por, total_clientes, TOTAL_OBLIGACIONES) VALUES (?, ?, ?, 0, 0)");
                 $stmt->execute([trim($nombre), $estado, $creadoPor]);
             } else {
@@ -64,6 +69,12 @@ class BaseCliente {
             }
             throw $e;
         }
+    }
+
+    private function columnaExiste(string $columna): bool {
+        $stmt = $this->db->prepare("SHOW COLUMNS FROM base_clientes LIKE ?");
+        $stmt->execute([$columna]);
+        return $stmt->rowCount() > 0;
     }
 
     public function actualizar($id, $datos) {

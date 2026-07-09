@@ -1,0 +1,840 @@
+/* ==========================================================================
+   Módulo Campañas — Admin
+   Complemento de admin-dashboard.css y common.css
+   ========================================================================== */
+
+.campanas-module.current-call-section {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    border-bottom: none;
+    overflow: visible;
+    padding: 24px 28px 48px;
+    background: linear-gradient(180deg, #f0f4ff 0%, #f8f9fa 220px, #f8f9fa 100%);
+    min-height: calc(100vh - 64px);
+}
+
+/* --- Encabezado de página --- */
+.campanas-module .page-intro {
+    margin-bottom: 28px;
+}
+
+.campanas-module .page-intro h1 {
+    font-size: 1.85rem;
+    font-weight: 700;
+    color: #1a237e;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+}
+
+.campanas-module .page-intro h1 .page-title-icon {
+    color: #007bff;
+    margin-right: 10px;
+    font-size: 0.85em;
+    vertical-align: middle;
+}
+
+.campanas-module .page-intro p {
+    color: #5c6b7a;
+    font-size: 0.98rem;
+    max-width: 640px;
+    line-height: 1.5;
+}
+
+.campanas-module .page-intro-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.campanas-module .page-intro-actions .btn {
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+}
+
+.campanas-module .page-intro-actions .btn-warning {
+    box-shadow: 0 2px 8px rgba(255, 193, 7, 0.35);
+}
+
+.campanas-module .page-intro-actions .btn-success {
+    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.25);
+}
+
+/* --- Meta chips (gestionar campaña) --- */
+.campana-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.campana-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff;
+    color: #374151;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.campana-meta-item i {
+    color: #007bff;
+    font-size: 0.8rem;
+}
+
+/* --- Tarjetas de estadísticas --- */
+.campanas-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    margin-bottom: 28px;
+}
+
+.campanas-stat-card {
+    position: relative;
+    background: #fff;
+    border-radius: 14px;
+    padding: 20px 20px 20px 72px;
+    box-shadow: 0 4px 20px rgba(26, 35, 126, 0.07);
+    border: 1px solid rgba(0, 123, 255, 0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    overflow: hidden;
+}
+
+.campanas-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: linear-gradient(180deg, #007bff, #0056b3);
+    border-radius: 14px 0 0 14px;
+}
+
+.campanas-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(26, 35, 126, 0.12);
+}
+
+.campanas-stat-card .stat-icon {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    color: #fff;
+    background: linear-gradient(135deg, #007bff, #0056b3);
+}
+
+.campanas-stat-card--activas::before {
+    background: linear-gradient(180deg, #28a745, #1e7e34);
+}
+
+.campanas-stat-card--activas .stat-icon {
+    background: linear-gradient(135deg, #28a745, #1e7e34);
+}
+
+.campanas-stat-card--coords::before {
+    background: linear-gradient(180deg, #6f42c1, #5a32a3);
+}
+
+.campanas-stat-card--coords .stat-icon {
+    background: linear-gradient(135deg, #6f42c1, #5a32a3);
+}
+
+.campanas-stat-card--asesores::before {
+    background: linear-gradient(180deg, #17a2b8, #117a8b);
+}
+
+.campanas-stat-card--asesores .stat-icon {
+    background: linear-gradient(135deg, #17a2b8, #117a8b);
+}
+
+.campanas-stat-card .value {
+    font-size: 1.9rem;
+    font-weight: 800;
+    color: #1a237e;
+    line-height: 1.1;
+}
+
+.campanas-stat-card .label {
+    color: #6b7280;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+}
+
+/* --- Tarjetas de contenido --- */
+.campanas-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    margin-bottom: 24px;
+    overflow: hidden;
+    border: 1px solid #e9ecef;
+}
+
+.campanas-grid .campanas-card {
+    margin-bottom: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.campanas-grid .campanas-card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.campanas-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 22px;
+    font-weight: 700;
+    font-size: 1rem;
+    color: #1a237e;
+    border-bottom: 1px solid #e9ecef;
+    background: linear-gradient(90deg, #f8f9ff 0%, #fff 100%);
+}
+
+.campanas-card-header i {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: #fff;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.campanas-card-header--coords i {
+    background: linear-gradient(135deg, #6f42c1, #5a32a3);
+}
+
+.campanas-card-header--asesores i {
+    background: linear-gradient(135deg, #17a2b8, #117a8b);
+}
+
+.campanas-card-header--audit i {
+    background: linear-gradient(135deg, #fd7e14, #e8590c);
+}
+
+.campanas-card-body {
+    padding: 22px;
+}
+
+.campanas-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    margin-bottom: 8px;
+}
+
+/* --- Formulario crear/editar --- */
+.campanas-form-layout {
+    max-width: 720px;
+}
+
+.campanas-form-group {
+    margin-bottom: 20px;
+}
+
+.campanas-form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #374151;
+    font-size: 0.9rem;
+}
+
+.campanas-form-group input,
+.campanas-form-group textarea,
+.campanas-form-group select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    background: #fff;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.campanas-form-group input:focus,
+.campanas-form-group textarea:focus,
+.campanas-form-group select:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
+}
+
+.campanas-form-group textarea {
+    resize: vertical;
+    min-height: 110px;
+}
+
+.campanas-form-group .form-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: #6b7280;
+}
+
+.campanas-form-group code {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 8px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+/* --- Tablas --- */
+.campanas-table-wrap {
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid #eef0f3;
+}
+
+.campanas-module .asignaciones-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.campanas-module .asignaciones-table thead {
+    background: linear-gradient(180deg, #f8f9ff, #f1f3f9);
+}
+
+.campanas-module .asignaciones-table th {
+    padding: 14px 18px;
+    text-align: left;
+    font-weight: 700;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #5c6b7a;
+    border-bottom: 2px solid #e5e7eb;
+    white-space: nowrap;
+}
+
+.campanas-module .asignaciones-table td {
+    padding: 14px 18px;
+    border-bottom: 1px solid #f1f3f5;
+    vertical-align: middle;
+    color: #374151;
+}
+
+.campanas-module .asignaciones-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.campanas-module .asignaciones-table tbody tr:hover {
+    background-color: #f8faff;
+}
+
+.campanas-module .asignaciones-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.campana-row-inactiva {
+    opacity: 0.92;
+}
+
+.campana-row-inactiva td {
+    background: #fafbfc;
+}
+
+.campana-row-inactiva:hover td {
+    background: #f5f6f8 !important;
+}
+
+.campana-nombre-cell strong {
+    color: #1a237e;
+    font-weight: 600;
+}
+
+.campana-id-cell {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82rem;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+.campana-metric {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #3730a3;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.campana-metric--bases {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
+/* --- Badges de estado --- */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-badge::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-badge-activa {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-badge-activa::before {
+    background: #10b981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3);
+}
+
+.status-badge-inactiva {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-badge-inactiva::before {
+    background: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+}
+
+/* --- Acciones en tabla --- */
+.table-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.campanas-module .table-actions .btn-sm {
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 8px;
+    letter-spacing: 0.01em;
+}
+
+.campanas-module .btn-outline-secondary {
+    background: #fff;
+    border: 1px solid #d1d5db;
+    color: #4b5563;
+}
+
+.campanas-module .btn-outline-secondary:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+    color: #1f2937;
+}
+
+.campanas-module .btn-outline-primary {
+    background: #fff;
+    border: 1px solid #007bff;
+    color: #007bff;
+}
+
+.campanas-module .btn-outline-primary:hover {
+    background: #007bff;
+    color: #fff;
+}
+
+/* --- Toolbar de asignación --- */
+.assign-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: stretch;
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px dashed #e5e7eb;
+}
+
+.assign-toolbar select {
+    min-width: 220px;
+    flex: 1;
+    padding: 11px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 14px;
+    background: #fff;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.assign-toolbar select:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.12);
+}
+
+.assign-toolbar .btn {
+    flex-shrink: 0;
+}
+
+.assign-toolbar-info {
+    margin-top: 16px;
+    margin-bottom: 0;
+}
+
+/* --- Persona en tabla (gestionar) --- */
+.persona-cell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.persona-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.persona-avatar--coord {
+    background: linear-gradient(135deg, #6f42c1, #5a32a3);
+}
+
+.persona-avatar--asesor {
+    background: linear-gradient(135deg, #17a2b8, #117a8b);
+}
+
+.persona-nombre {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.persona-usuario {
+    font-size: 0.82rem;
+    color: #6b7280;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* --- Auditoría --- */
+.audit-accion {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+.audit-fecha {
+    font-size: 0.85rem;
+    color: #6b7280;
+    white-space: nowrap;
+}
+
+.audit-detail {
+    font-size: 0.82rem;
+    color: #4b5563;
+    display: block;
+}
+
+.audit-detail-cell {
+    min-width: 220px;
+    max-width: 360px;
+}
+
+.audit-detail-list {
+    margin: 0;
+    padding-left: 18px;
+    list-style: disc;
+    line-height: 1.45;
+}
+
+.audit-detail-list li {
+    margin-bottom: 4px;
+}
+
+.audit-detail-list li:last-child {
+    margin-bottom: 0;
+}
+
+.audit-detail-empty {
+    color: #9ca3af;
+    font-size: 0.85rem;
+}
+
+/* --- Alertas --- */
+.alert-campana {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    border: 1px solid transparent;
+}
+
+.alert-campana::before {
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.alert-campana-success {
+    background: #ecfdf5;
+    color: #065f46;
+    border-color: #a7f3d0;
+}
+
+.alert-campana-success::before {
+    content: '\f058';
+    color: #10b981;
+}
+
+.alert-campana-error {
+    background: #fef2f2;
+    color: #991b1b;
+    border-color: #fecaca;
+}
+
+.alert-campana-error::before {
+    content: '\f06a';
+    color: #ef4444;
+}
+
+.alert-campana-info {
+    background: #eff6ff;
+    color: #1e40af;
+    border-color: #bfdbfe;
+}
+
+.alert-campana-info::before {
+    content: '\f05a';
+    color: #3b82f6;
+}
+
+.alert-campana-warning {
+    background: #fffbeb;
+    color: #92400e;
+    border-color: #fcd34d;
+}
+
+.alert-campana-warning::before {
+    content: '\f071';
+    color: #f59e0b;
+}
+
+/* --- Estado vacío --- */
+.empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: #6b7280;
+}
+
+.empty-state-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: #007bff;
+}
+
+.empty-state strong {
+    display: block;
+    color: #1f2937;
+    font-size: 1.05rem;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    margin: 0;
+    max-width: 360px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.5;
+}
+
+/* --- Acciones de tarjeta y navegación --- */
+.card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+.breadcrumb-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+    color: #9ca3af;
+    font-size: 0.9rem;
+}
+
+.breadcrumb-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #007bff;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.15s;
+}
+
+.breadcrumb-links a:hover {
+    color: #0056b3;
+    text-decoration: underline;
+}
+
+.breadcrumb-links span {
+    color: #d1d5db;
+}
+
+/* --- Responsive --- */
+@media (max-width: 1100px) {
+    .campanas-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .campanas-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .campanas-module.current-call-section {
+        padding: 16px 16px 32px;
+    }
+
+    .campanas-module .page-intro h1 {
+        font-size: 1.45rem;
+    }
+
+    .campanas-module .page-intro-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .campanas-module .page-intro-actions .btn {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+
+    .campanas-stats {
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .campanas-stat-card {
+        padding: 16px 16px 16px 60px;
+    }
+
+    .campanas-stat-card .stat-icon {
+        width: 36px;
+        height: 36px;
+        left: 14px;
+        font-size: 0.95rem;
+    }
+
+    .campanas-stat-card .value {
+        font-size: 1.5rem;
+    }
+
+    .campanas-card-body {
+        padding: 16px;
+    }
+
+    .campanas-module .asignaciones-table th,
+    .campanas-module .asignaciones-table td {
+        padding: 10px 12px;
+    }
+
+    .table-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .campanas-module .table-actions .btn-sm {
+        width: 100%;
+        text-align: center;
+    }
+
+    .assign-toolbar {
+        flex-direction: column;
+    }
+
+    .assign-toolbar select,
+    .assign-toolbar .btn {
+        width: 100%;
+    }
+
+    .campana-meta-item {
+        font-size: 0.8rem;
+        padding: 6px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .campanas-stats {
+        grid-template-columns: 1fr;
+    }
+}

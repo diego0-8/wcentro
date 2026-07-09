@@ -6,13 +6,14 @@
 
 require_once __DIR__ . '/../models/Usuario.php';
 require_once __DIR__ . '/../models/Asignacion.php';
+require_once __DIR__ . '/../models/Campana.php';
 require_once __DIR__ . '/../models/Cliente.php';
 
 class AdminDashboardController {
 
     /**
      * Obtiene todos los datos necesarios para el dashboard del administrador
-     * @return array{usuarios: array, asignaciones: array, estadisticas: array, coordinadores: array}
+     * @return array{usuarios: array, asignaciones: array, estadisticas: array, coordinadores: array, campanas: array}
      */
     public function obtenerDatosDashboard() {
         try {
@@ -22,7 +23,16 @@ class AdminDashboardController {
                 $usuarios = [];
             }
             
-            // Obtener asignaciones
+            // Campañas (reemplaza asignaciones directas como fuente principal)
+            $campanas = [];
+            try {
+                $campanaModel = new Campana();
+                $campanas = $campanaModel->obtenerActivas();
+            } catch (Exception $e) {
+                error_log("AdminDashboardController: Error al obtener campañas - " . $e->getMessage());
+            }
+
+            // Asignaciones legacy (solo historial / compatibilidad UI)
             $asignaciones = [];
             try {
                 $asignacionModel = new Asignacion();
@@ -53,11 +63,12 @@ class AdminDashboardController {
             $coordinadores = array_values($coordinadores); // Reindexar
             
             // Calcular estadísticas
-            $estadisticas = $this->calcularEstadisticas($usuarios, $asignaciones, $clientes);
+            $estadisticas = $this->calcularEstadisticas($usuarios, $asignaciones, $clientes, $campanas);
             
             return [
                 'usuarios' => $usuarios,
                 'asignaciones' => $asignaciones,
+                'campanas' => $campanas,
                 'estadisticas' => $estadisticas,
                 'coordinadores' => $coordinadores,
             ];
@@ -66,7 +77,8 @@ class AdminDashboardController {
             return [
                 'usuarios' => [],
                 'asignaciones' => [],
-                'estadisticas' => $this->calcularEstadisticas([], [], []),
+                'campanas' => [],
+                'estadisticas' => $this->calcularEstadisticas([], [], [], []),
                 'coordinadores' => [],
             ];
         }
@@ -79,15 +91,20 @@ class AdminDashboardController {
      * @param array $clientes
      * @return array
      */
-    private function calcularEstadisticas($usuarios, $asignaciones = [], $clientes = []) {
+    private function calcularEstadisticas($usuarios, $asignaciones = [], $clientes = [], $campanas = []) {
         $total = count($usuarios);
         $activos = 0;
         $coordinadores = 0;
         $coordinadoresDisponibles = 0;
         $asesores = 0;
-        $asesoresAsignados = count(array_filter($asignaciones, function($a) {
-            return strtolower($a['estado'] ?? 'activa') === 'activa';
-        }));
+
+        $campanaModel = new Campana();
+        $usaCampanas = $campanaModel->tablaExiste() && !empty($campanas);
+        $asesoresAsignados = $usaCampanas
+            ? (int) array_sum(array_column($campanas, 'total_asesores'))
+            : count(array_filter($asignaciones, function ($a) {
+                return strtolower($a['estado'] ?? 'activa') === 'activa';
+            }));
         
         foreach ($usuarios as $usuario) {
             $estado = strtolower($usuario['estado'] ?? '');
@@ -106,11 +123,24 @@ class AdminDashboardController {
             }
         }
         
-        // Asesores sin coordinador: asesores activos que no tienen asignación activa
+        // Asesores sin campaña activa
         $cedulasAsignadas = [];
-        foreach ($asignaciones as $a) {
-            if (strtolower($a['estado'] ?? 'activa') === 'activa' && !empty($a['asesor_cedula'])) {
-                $cedulasAsignadas[$a['asesor_cedula']] = true;
+        if ($usaCampanas) {
+            try {
+                $stmt = getDBConnection()->query("SELECT asesor_cedula FROM campana_asesores WHERE estado = 'activo'");
+                if ($stmt) {
+                    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $ced) {
+                        $cedulasAsignadas[$ced] = true;
+                    }
+                }
+            } catch (Exception $e) {
+                error_log('AdminDashboardController::calcularEstadisticas campanas - ' . $e->getMessage());
+            }
+        } else {
+            foreach ($asignaciones as $a) {
+                if (strtolower($a['estado'] ?? 'activa') === 'activa' && !empty($a['asesor_cedula'])) {
+                    $cedulasAsignadas[$a['asesor_cedula']] = true;
+                }
             }
         }
         $asesoresSinCoordinador = [];
@@ -145,6 +175,8 @@ class AdminDashboardController {
             'total_cartera' => 0,
             'clientes_gestionados' => 0,
             'clientes_pendientes' => 0,
+            'total_campanas' => count($campanas),
+            'campanas_activas' => count(array_filter($campanas, fn($c) => ($c['estado'] ?? '') === 'activa')),
             'actividad_reciente' => $actividadReciente,
         ];
     }

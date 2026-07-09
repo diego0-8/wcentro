@@ -16,7 +16,7 @@ $action = $action ?? $_GET['action'] ?? 'login';
     <nav class="sidebar-nav">
         <ul>
             <?php if ($rol_usuario === 'administrador'): ?>
-                <!-- NAVBAR ADMINISTRADOR: solo Dashboard, Usuarios (crear usuario), Asignaciones (asignar personal) -->
+                <!-- NAVBAR ADMINISTRADOR -->
                 <li class="<?php echo ($action === 'dashboard' || $action === 'admin_dashboard') ? 'active' : ''; ?>" 
                     onclick="window.location.href='index.php?action=dashboard'">
                     <i class="fas fa-th-large"></i> Dashboard
@@ -25,9 +25,9 @@ $action = $action ?? $_GET['action'] ?? 'login';
                     onclick="window.location.href='index.php?action=admin_usuarios'">
                     <i class="fas fa-users"></i> Usuarios
                 </li>
-                <li class="<?php echo ($action === 'admin_asignaciones' || $action === 'admin_asignar_personal') ? 'active' : ''; ?>" 
-                    onclick="window.location.href='index.php?action=admin_asignaciones'">
-                    <i class="fas fa-user-friends"></i> Asignaciones
+                <li class="<?php echo ($action === 'admin_asignaciones' || strpos((string) $action, 'campana') !== false || $action === 'list_campanas' || $action === 'gestionar_campana') ? 'active' : ''; ?>" 
+                    onclick="window.location.href='index.php?action=list_campanas'">
+                    <i class="fas fa-bullhorn"></i> Campañas
                 </li>
                 <li class="<?php echo ($action === 'admin_reportes') ? 'active' : ''; ?>" 
                     onclick="window.location.href='index.php?action=admin_reportes'">

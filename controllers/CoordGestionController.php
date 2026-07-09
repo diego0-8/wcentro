@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../models/Usuario.php';
 require_once __DIR__ . '/../models/Asignacion.php';
+require_once __DIR__ . '/../models/Campana.php';
 require_once __DIR__ . '/../models/Cliente.php';
 require_once __DIR__ . '/../models/BaseCliente.php';
 require_once __DIR__ . '/../models/Obligacion.php';
@@ -18,6 +19,48 @@ class CoordGestionController {
         return $_SESSION['usuario_id'] ?? $_SESSION['usuario_cedula'] ?? null;
     }
 
+    private function campanaModel(): Campana {
+        static $model = null;
+        if ($model === null) {
+            $model = new Campana();
+        }
+        return $model;
+    }
+
+    private function cedulasAsesoresCoordinador(?string $cedula): array {
+        if (!$cedula) {
+            return [];
+        }
+        return $this->campanaModel()->getAsesoresCedulasDelCoordinador($cedula);
+    }
+
+    private function asesoresListaCoordinador(?string $cedula): array {
+        if (!$cedula) {
+            return [];
+        }
+        return $this->campanaModel()->getAsesoresDelCoordinador($cedula);
+    }
+
+    private function coordinadorPuedeAccederBase(?string $cedula, int $baseId): bool {
+        if (!$cedula || $baseId <= 0) {
+            return false;
+        }
+        return $this->campanaModel()->coordinadorAccedeABase($cedula, $baseId);
+    }
+
+    private function auditarCoordinador(string $accion, string $entidad, ?int $entidadId = null, ?array $detalle = null): void {
+        try {
+            $cedula = $this->coordinadorCedula();
+            if (!$cedula) {
+                return;
+            }
+            $campanaId = $this->campanaModel()->obtenerPrimeraCampanaIdDelCoordinador((string) $cedula);
+            $this->campanaModel()->registrarAuditoria((string) $cedula, $campanaId, $accion, $entidad, $entidadId, $detalle);
+        } catch (Throwable $e) {
+            error_log('CoordGestionController::auditarCoordinador - ' . $e->getMessage());
+        }
+    }
+
     /**
      * Lista bases de clientes (desde distinct base_id en cliente, o tabla base_clientes si existe)
      * @return array{success: bool, data?: array, bases?: array}
@@ -26,22 +69,37 @@ class CoordGestionController {
         try {
             $db = getDBConnection();
             $bases = [];
+            $cedula = $this->coordinadorCedula();
+            $filtrarPorCampana = $this->campanaModel()->tablaExiste() && $cedula;
             $tablasBases = ['base_clientes', 'bases'];
             $encontrada = false;
             foreach ($tablasBases as $tabla) {
                 try {
                     $stmt = $db->query("SHOW TABLES LIKE '$tabla'");
                     if ($stmt->rowCount() > 0) {
-                        // Conteos reales desde cliente/obligaciones (no solo columnas cacheadas)
+                        $filtroCampana = '';
+                        if ($filtrarPorCampana) {
+                            $filtroCampana = " AND (
+                                bc.creado_por = " . $db->quote((string) $cedula) . "
+                                OR bc.campana_id IN (
+                                    SELECT cc.campana_id FROM campana_coordinadores cc
+                                    INNER JOIN campanas c ON c.id_campana = cc.campana_id AND c.estado = 'activa'
+                                    WHERE cc.coordinador_cedula = " . $db->quote((string) $cedula) . "
+                                      AND cc.estado = 'activo'
+                                )
+                            )";
+                        }
                         $sql = "
                             SELECT
                                 bc.id_base AS id,
                                 bc.nombre,
                                 bc.estado,
                                 bc.fecha_creacion,
+                                bc.campana_id,
                                 (SELECT COUNT(*) FROM cliente c WHERE c.base_id = bc.id_base) AS total_clientes,
                                 (SELECT COUNT(*) FROM obligaciones o WHERE o.base_id = bc.id_base) AS total_obligaciones
                             FROM `{$tabla}` bc
+                            WHERE LOWER(TRIM(bc.estado)) = 'activo'{$filtroCampana}
                             ORDER BY bc.nombre
                         ";
                         $stmt = $db->query($sql);
@@ -190,17 +248,7 @@ class CoordGestionController {
             return ['success' => false, 'message' => 'No autorizado', 'asesores' => []];
         }
         try {
-            $asignacionModel = new Asignacion();
-            $usuarioModel = new Usuario();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($cedula);
-            $asesores = [];
-            foreach ($asignaciones as $a) {
-                $u = $usuarioModel->obtenerPorCedula($a['asesor_cedula']);
-                if ($u && strtolower($u['rol'] ?? '') === 'asesor') {
-                    $u['nombre_completo'] = $u['nombre_completo'] ?? $u['nombre'] ?? '';
-                    $asesores[] = $u;
-                }
-            }
+            $asesores = $this->asesoresListaCoordinador($cedula);
             return ['success' => true, 'asesores' => $asesores, 'data' => $asesores];
         } catch (Exception $e) {
             error_log("CoordGestionController::obtenerAsesores - " . $e->getMessage());
@@ -229,7 +277,7 @@ class CoordGestionController {
                 return [
                     'success' => false,
                     'error' => 'Faltan tablas: ' . implode(', ', $faltan),
-                    'instrucciones' => 'Importe un script SQL existente del proyecto (por ejemplo sql/banco.sql o sql/bancoactual.sql) y verifique que la tabla cliente tenga la columna base_id.',
+                    'instrucciones' => 'Verifique que la base de datos esté importada correctamente y que la tabla cliente tenga la columna base_id.',
                 ];
             }
             $totalBases = 0;
@@ -256,7 +304,7 @@ class CoordGestionController {
             return [
                 'success' => false,
                 'error' => $e->getMessage(),
-                'instrucciones' => 'Revise la configuración de la base de datos e importe un script SQL existente del proyecto (por ejemplo sql/banco.sql o sql/bancoactual.sql).',
+                'instrucciones' => 'Revise la configuración de la base de datos (config.php) y verifique que la BD wcentro esté creada e importada.',
             ];
         }
     }
@@ -393,7 +441,8 @@ class CoordGestionController {
         $baseId = 0;
         $creadoPor = $_SESSION['usuario_cedula'] ?? $_SESSION['usuario_id'] ?? null;
         if ($tipoCarga === 'nueva') {
-            $baseId = $baseClienteModel->crear($nombreArchivo, 'activo', $creadoPor);
+            $campanaId = $this->campanaModel()->obtenerPrimeraCampanaIdDelCoordinador((string) $creadoPor);
+            $baseId = $baseClienteModel->crear($nombreArchivo, 'activo', $creadoPor, $campanaId);
             if (!$baseId) {
                 return ['success' => false, 'mensaje' => 'No se pudo crear la base de clientes. Verifique que el usuario esté logueado (creado_por).'];
             }
@@ -407,6 +456,9 @@ class CoordGestionController {
                 return ['success' => false, 'mensaje' => 'La base seleccionada no está habilitada. Habilítela en la pestaña HABILITAR antes de cargar un CSV.'];
             }
             $baseId = (int)$base['id'];
+            if (!$this->coordinadorPuedeAccederBase((string) $creadoPor, $baseId)) {
+                return ['success' => false, 'mensaje' => 'No tiene permiso para cargar en esta base.'];
+            }
         }
 
         $separator = $_POST['separator'] ?? ',';
@@ -421,6 +473,12 @@ class CoordGestionController {
                 'skip_empty' => !empty($_POST['skip_empty']),
                 'encoding' => $_POST['encoding'] ?? 'utf-8',
             ]);
+            if (!empty($resultado['success'])) {
+                $this->auditarCoordinador('cargar_csv', 'base_clientes', (int) $baseId, [
+                    'tipo_carga' => $tipoCarga,
+                    'filas' => (int) ($resultado['filas_procesadas'] ?? 0),
+                ]);
+            }
             @file_put_contents(dirname(__DIR__) . '/log_carga_diagnostico.txt', date('c') . " CoordGestionController::cargarCsv retorno OK filas=" . ($resultado['filas_procesadas'] ?? 0) . "\n", FILE_APPEND);
             return $this->respuestaCargaCsvParaWeb($resultado);
         } catch (Throwable $e) {
@@ -1161,15 +1219,9 @@ class CoordGestionController {
                 return ['success' => false, 'message' => 'No autorizado', 'asesores' => []];
             }
 
-            $asignacionModel = new Asignacion();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($cedula);
             $todosAsesores = [];
-            foreach ($asignaciones as $a) {
-                $u = $usuarioModel->obtenerPorCedula($a['asesor_cedula']);
-                if ($u && strtolower($u['rol'] ?? '') === 'asesor') {
-                    $u['nombre_completo'] = $u['nombre_completo'] ?? $u['nombre'] ?? '';
-                    $todosAsesores[$u['cedula']] = $u;
-                }
+            foreach ($this->asesoresListaCoordinador($cedula) as $u) {
+                $todosAsesores[$u['cedula']] = $u;
             }
 
             // Obtener asesores que YA tienen acceso a esta base
@@ -1210,11 +1262,7 @@ class CoordGestionController {
 
             $db = getDBConnection();
             $usuarioModel = new Usuario();
-            $asignacionModel = new Asignacion();
-            
-            // Obtener todos los asesores asignados al coordinador
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCoordinador = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCoordinador = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             
             if (empty($asesoresCoordinador)) {
                 return ['success' => true, 'asesores' => []];
@@ -1280,11 +1328,7 @@ class CoordGestionController {
             
             $db = getDBConnection();
             $usuarioModel = new Usuario();
-            $asignacionModel = new Asignacion();
-            
-            // Verificar que todos los asesores estén asignados al coordinador
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCoordinador = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCoordinador = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             
             $asesoresValidos = [];
             foreach ($asesoresIds as $asesorCedula) {
@@ -1336,6 +1380,12 @@ class CoordGestionController {
             if ($actualizados > 0) {
                 $mensaje .= "$actualizados acceso(s) reactivado(s).";
             }
+
+            $this->auditarCoordinador('asignar_acceso_base', 'base_clientes', (int) $baseId, [
+                'asesores' => $asesoresValidos,
+                'insertados' => $insertados,
+                'actualizados' => $actualizados,
+            ]);
             
             return [
                 'success' => true,
@@ -1460,6 +1510,11 @@ class CoordGestionController {
             
             if ($tareaId) {
                 $tareaModel->insertarDetalleTareas($tareaId, $clientesParaAsignar);
+                $this->auditarCoordinador('crear_tarea', 'tareas', (int) $tareaId, [
+                    'asesor_cedula' => $asesorCedula,
+                    'base_id' => (int) $baseId,
+                    'clientes' => count($clientesParaAsignar),
+                ]);
                 return [
                     'success' => true,
                     'message' => "Se asignaron {$cantidadClientes} clientes exitosamente",
@@ -2163,9 +2218,7 @@ class CoordGestionController {
             }
             
             // Verificar que el asesor esté asignado al coordinador
-            $asignacionModel = new Asignacion();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCoordinador = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCoordinador = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             
             if (!in_array($asesorCedula, $asesoresCoordinador)) {
                 return ['success' => false, 'message' => 'El asesor no está asignado a este coordinador'];
@@ -2175,6 +2228,9 @@ class CoordGestionController {
             $stmt = $db->prepare("UPDATE asignacion_base_asesores SET estado = 'inactiva', fecha_actualizacion = NOW() WHERE base_id = ? AND asesor_cedula = ?");
             
             if ($stmt->execute([$baseId, $asesorCedula])) {
+                $this->auditarCoordinador('liberar_acceso_base', 'base_clientes', (int) $baseId, [
+                    'asesor_cedula' => $asesorCedula,
+                ]);
                 return ['success' => true, 'message' => 'Acceso liberado exitosamente'];
             }
             
@@ -2208,6 +2264,9 @@ class CoordGestionController {
                 return ['success' => true, 'message' => 'La base ya estaba habilitada'];
             }
             if ($baseClienteModel->actualizar($baseId, ['estado' => 'activo'])) {
+                $this->auditarCoordinador('habilitar_base', 'base_clientes', (int) $baseId, [
+                    'nombre' => $base['nombre'] ?? '',
+                ]);
                 return ['success' => true, 'message' => 'Base habilitada exitosamente'];
             }
             return ['success' => false, 'message' => 'No se pudo habilitar la base'];
@@ -2250,6 +2309,9 @@ class CoordGestionController {
                     // No bloquear deshabilitado por esto, pero dejar rastro
                     error_log("CoordGestionController::deshabilitarBase - no se pudo inactivar accesos: " . $e->getMessage());
                 }
+                $this->auditarCoordinador('deshabilitar_base', 'base_clientes', (int) $baseId, [
+                    'nombre' => $base['nombre'] ?? '',
+                ]);
                 return ['success' => true, 'message' => 'Base deshabilitada exitosamente'];
             }
             return ['success' => false, 'message' => 'No se pudo deshabilitar la base'];
@@ -2288,6 +2350,7 @@ class CoordGestionController {
             // Eliminar la base
             $stmt = $db->prepare("DELETE FROM base_clientes WHERE id_base = ?");
             if ($stmt->execute([$baseId])) {
+                $this->auditarCoordinador('eliminar_base', 'base_clientes', (int) $baseId);
                 return ['success' => true, 'message' => 'Base eliminada exitosamente'];
             }
             
@@ -2312,9 +2375,7 @@ class CoordGestionController {
             $db = getDBConnection();
             
             // Obtener asesores asignados al coordinador
-            $asignacionModel = new Asignacion();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCedulas = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCedulas = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             
             if (empty($asesoresCedulas)) {
                 return ['success' => true, 'historial' => []];
@@ -2394,6 +2455,7 @@ class CoordGestionController {
             $stmt = $db->prepare("DELETE FROM tareas WHERE id_tarea = ?");
             
             if ($stmt->execute([$tareaId])) {
+                $this->auditarCoordinador('eliminar_tarea', 'tareas', (int) $tareaId);
                 return ['success' => true, 'message' => 'Tarea eliminada exitosamente'];
             }
 
@@ -2624,9 +2686,7 @@ class CoordGestionController {
                 exit;
             }
             $db = getDBConnection();
-            $asignacionModel = new Asignacion();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCedulas = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCedulas = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             if (empty($asesoresCedulas)) {
                 header('Content-Type: application/json');
                 echo json_encode(['success' => false, 'message' => 'No tiene asesores asignados.']);
@@ -2823,9 +2883,7 @@ class CoordGestionController {
                 exit;
             }
             $db = getDBConnection();
-            $asignacionModel = new Asignacion();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCedulas = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCedulas = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             if (empty($asesoresCedulas)) {
                 header('Content-Type: application/json');
                 echo json_encode(['success' => false, 'message' => 'No tiene asesores asignados.']);
@@ -2899,9 +2957,7 @@ class CoordGestionController {
             $db = getDBConnection();
             
             // Obtener asesores asignados al coordinador
-            $asignacionModel = new Asignacion();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCedulas = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCedulas = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             
             if (empty($asesoresCedulas)) {
                 return ['success' => true, 'message' => 'No hay historial para limpiar'];
@@ -2942,9 +2998,7 @@ class CoordGestionController {
             }
             
             // Verificar que el asesor esté asignado al coordinador
-            $asignacionModel = new Asignacion();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCoordinador = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCoordinador = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             
             if (!in_array($asesorCedula, $asesoresCoordinador)) {
                 return ['success' => false, 'message' => 'El asesor no está asignado a este coordinador'];
@@ -3110,9 +3164,7 @@ class CoordGestionController {
             }
             
             // Verificar que el asesor esté asignado al coordinador
-            $asignacionModel = new Asignacion();
-            $asignaciones = $asignacionModel->obtenerPorCoordinador($coordinadorCedula);
-            $asesoresCoordinador = array_column($asignaciones, 'asesor_cedula');
+            $asesoresCoordinador = $this->cedulasAsesoresCoordinador($coordinadorCedula);
             
             if (!in_array($asesorCedula, $asesoresCoordinador)) {
                 return ['success' => false, 'message' => 'El asesor no está asignado a este coordinador'];

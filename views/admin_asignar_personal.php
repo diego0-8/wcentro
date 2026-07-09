@@ -1,7 +1,10 @@
 <?php require_once __DIR__ . '/../config.php';
 
+// Inyectadas por index.php al cargar esta vista (AdminDashboardController).
+$coordinadores = (isset($coordinadores) && is_array($coordinadores)) ? $coordinadores : [];
+$estadisticas = (isset($estadisticas) && is_array($estadisticas)) ? $estadisticas : [];
+$asignacionesLista = (isset($asignaciones) && is_array($asignaciones)) ? $asignaciones : [];
 $asesoresDisponibles = $estadisticas['asesores_sin_coordinador'] ?? [];
-$asignacionesLista = is_array($asignaciones ?? null) ? $asignaciones : [];
 $totalAsignaciones = count($asignacionesLista);
 $asignacionesActivas = array_filter($asignacionesLista, function ($a) {
     return strtolower($a['estado'] ?? '') === 'activa';
@@ -345,305 +348,19 @@ usort($historialAsignaciones, function ($a, $b) {
                                     </div>
                                 </div>
                                 
+
                                 <div class="stat-card">
                                     <div class="stat-icon">
                                         <i class="fas fa-user-shield"></i>
                                     </div>
                                     <div class="stat-content">
                                         <h5>Coordinadores</h5>
-                                        <div>
-                                        <span class="stat-number"><?php echo count($asignaciones); ?></span>
-                                        <span class="stat-label">Total Asignaciones</span>
-                                    </div>
-                                </div>
-                                <div class="stat-item">
-                                    <i class="fas fa-user-check"></i>
-                                    <div>
-                                        <span class="stat-number"><?php echo count(array_filter($asignaciones, function($a) { return $a['estado'] === 'activa'; })); ?></span>
-                                        <span class="stat-label">Activas</span>
-                                    </div>
-                                </div>
-                                <div class="stat-item">
-                                    <i class="fas fa-user-times"></i>
-                                    <div>
-                                        <span class="stat-number"><?php echo count(array_filter($asignaciones, function($a) { return $a['estado'] === 'inactiva'; })); ?></span>
-                                        <span class="stat-label">Inactivas</span>
+                                        <div class="stat-value"><?php echo count($coordinadores); ?></div>
+                                        <div class="stat-subtitle">Activos</div>
                                     </div>
                                 </div>
                             </div>
-                            
-                            <div class="quick-actions">
-                                <button class="action-btn" onclick="openModal('asignar-personal')">
-                                    <i class="fas fa-user-plus"></i>
-                                    Nueva Asignación
-                                </button>
-                                <button class="action-btn" onclick="exportarAsignaciones()">
-                                    <i class="fas fa-download"></i>
-                                    Exportar Lista
-                                </button>
-                                <button class="action-btn" onclick="refreshAsignaciones()">
-                                    <i class="fas fa-sync"></i>
-                                    Actualizar
-                                </button>
-                            </div>
-                        </aside>
-                    </div>
 
-                    <!-- PESTAÑA 4: CLIENTES -->
-                    <div class="tab-content" id="tab-clientes" style="display: none;">
-                        <div class="left-content">
-                            <h4 style="margin-top: 0;">Resumen de Clientes</h4>
-                            <div class="stats-grid">
-                                <div class="stat-card">
-                                    <h5>Total Clientes</h5>
-                                    <div class="stat-value"><?php echo $estadisticas['total_clientes'] ?? 0; ?></div>
-                                    <div class="stat-subtitle">En la base de datos</div>
-                                </div>
-                                <div class="stat-card">
-                                    <h5>Gestionados</h5>
-                                    <div class="stat-value"><?php echo $estadisticas['clientes_gestionados'] ?? 0; ?></div>
-                                    <div class="stat-subtitle">Con al menos una gestión</div>
-                                </div>
-                                <div class="stat-card">
-                                    <h5>Pendientes</h5>
-                                    <div class="stat-value"><?php echo $estadisticas['clientes_pendientes'] ?? 0; ?></div>
-                                    <div class="stat-subtitle">Sin gestionar</div>
-                                </div>
-                                <div class="stat-card">
-                                    <h5>Nuevos (30 días)</h5>
-                                    <div class="stat-value"><?php echo $estadisticas['clientes_nuevos'] ?? 0; ?></div>
-                                    <div class="stat-subtitle">Último mes</div>
-                                </div>
-                            </div>
-                            
-                            <div class="quick-actions">
-                                <button class="btn btn-primary" onclick="openModal('cargar-clientes')">
-                                    <i class="fas fa-upload"></i> Cargar Nuevos Clientes
-                                </button>
-                                <button class="btn btn-secondary" onclick="openModal('generar-reporte')">
-                                    <i class="fas fa-file-alt"></i> Generar Reporte
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- PESTAÑA 4: ACTIVIDAD -->
-                    <div class="tab-content" id="tab-actividad" style="display: none;">
-                        <div class="left-content">
-                            <h4 style="margin-top: 0;">Actividad Reciente del Sistema</h4>
-                            <div class="activity-list">
-                                <?php if (!empty($estadisticas['actividad_reciente'])): ?>
-                                    <?php foreach ($estadisticas['actividad_reciente'] as $actividad): ?>
-                                        <div class="history-item">
-                                            <div class="activity-icon">
-                                                <?php 
-                                                $icono = 'fas fa-info-circle';
-                                                switch($actividad['tipo']) {
-                                                    case 'usuario_creado':
-                                                        $icono = 'fas fa-user-plus';
-                                                        break;
-                                                    case 'carga_excel':
-                                                        $icono = 'fas fa-upload';
-                                                        break;
-                                                    case 'asignacion_asesor':
-                                                        $icono = 'fas fa-user-friends';
-                                                        break;
-                                                    case 'gestion_cliente':
-                                                        $icono = 'fas fa-phone';
-                                                        break;
-                                                }
-                                                ?>
-                                                <i class="<?php echo $icono; ?>"></i>
-                                            </div>
-                                            <div class="activity-content">
-                                                <h5><?php echo htmlspecialchars($actividad['descripcion']); ?></h5>
-                                                <small>
-                                                    <strong><?php echo htmlspecialchars($actividad['usuario_nombre']); ?></strong> 
-                                                    (<?php echo ucfirst($actividad['usuario_rol']); ?>) - 
-                                                    <?php echo $actividad['tiempo_relativo']; ?>
-                                                </small>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <div class="history-item">
-                                        <h5>No hay actividad reciente</h5>
-                                        <small>El sistema está esperando actividad</small>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <aside class="right-sidebar">
-                        <h4>Acciones Rápidas</h4>
-                        <div class="quick-actions-sidebar">
-                            <button class="action-btn-sidebar" onclick="openModal('crear-usuario')">
-                                <i class="fas fa-user-plus"></i> Nuevo Usuario
-                            </button>
-                            <button class="action-btn-sidebar" onclick="openModal('asignar-personal')">
-                                <i class="fas fa-user-friends"></i> Asignar
-                            </button>
-                            <button class="action-btn-sidebar" onclick="openModal('cargar-clientes')">
-                                <i class="fas fa-upload"></i> Cargar
-                            </button>
-                            <button class="action-btn-sidebar" onclick="openModal('generar-reporte')">
-                                <i class="fas fa-file-alt"></i> Reporte
-                            </button>
-                        </div>
-                    </aside>
-                </div>
-            </div>
-        </section>
-    </div>
-
-    <!-- Modals -->
-    <!-- Modal Crear Usuario -->
-    <div id="crear-usuario" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Crear Nuevo Usuario</h3>
-                <button class="close-btn" onclick="closeModal('crear-usuario')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="form-crear-usuario" onsubmit="crearUsuario(event)">
-                    <div class="form-group">
-                        <label for="cedula">Cédula *</label>
-                        <input type="text" id="cedula" name="cedula" required placeholder="Ej: 12345678">
-                        <small>Identificación única del usuario</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="nombre_completo">Nombre Completo *</label>
-                        <input type="text" id="nombre_completo" name="nombre_completo" required placeholder="Ej: Juan Pérez García">
-                        <small>Nombre y apellidos completos</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="usuario">Usuario *</label>
-                        <input type="text" id="usuario" name="usuario" required placeholder="Ej: jperez">
-                        <small>Nombre único para iniciar sesión</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="contrasena">Contraseña *</label>
-                        <input type="password" id="contrasena" name="contrasena" required placeholder="Mínimo 6 caracteres">
-                        <small>Contraseña segura para el acceso</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="confirmar_contrasena">Confirmar Contraseña *</label>
-                        <input type="password" id="confirmar_contrasena" name="confirmar_contrasena" required placeholder="Repita la contraseña">
-                        <small>Debe coincidir con la contraseña anterior</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="rol">Rol *</label>
-                        <select id="rol" name="rol" required onchange="toggleCamposAsesor()">
-                            <option value="">Seleccionar rol</option>
-                            <option value="administrador">Administrador</option>
-                            <option value="coordinador">Coordinador</option>
-                            <option value="asesor">Asesor</option>
-                        </select>
-                        <small>Define los permisos del usuario</small>
-                    </div>
-                    
-                    <!-- Campos específicos para asesores (WebRTC Softphone) -->
-                    <div id="campos-asesor" style="display: none;">
-                        <div class="form-group">
-                            <label for="extension">Extensión SIP</label>
-                            <input type="text" id="extension" name="extension" placeholder="Ej: 1001">
-                            <small>Número de extensión para el softphone WebRTC (opcional)</small>
-                        </div>
-                        <div class="form-group">
-                            <label for="sip_password">Contraseña SIP</label>
-                            <input type="password" id="sip_password" name="sip_password" placeholder="Contraseña para autenticación SIP">
-                            <small>Contraseña para autenticación en el servidor SIP (opcional)</small>
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="estado">Estado *</label>
-                        <select id="estado" name="estado" required>
-                            <option value="activo" selected>Activo</option>
-                            <option value="inactivo">Inactivo</option>
-                        </select>
-                        <small>Estado inicial del usuario</small>
-                    </div>
-                    
-                    
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('crear-usuario')">Cancelar</button>
-                        <button type="submit" id="btn-crear-usuario" class="btn btn-primary">
-                            <i class="fas fa-user-plus"></i> Crear Usuario
-                        </button>
-                    </div>
-                </form>
-                <div id="alert-container-crear"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Asignar Personal -->
-    <div id="asignar-personal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Asignar Personal</h3>
-                <button class="close-btn" onclick="closeModal('asignar-personal')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="form-asignar-personal" onsubmit="asignarPersonal(event)">
-                    <div class="form-group">
-                        <label for="asesor_cedula">Asesor *</label>
-                        <select id="asesor_cedula" name="asesor_cedula" required>
-                            <option value="">Seleccionar asesor</option>
-                            <?php foreach ($estadisticas['asesores_sin_coordinador'] ?? [] as $asesor): ?>
-                                <option value="<?php echo $asesor['cedula']; ?>"><?php echo $asesor['nombre_completo']; ?> (<?php echo $asesor['usuario']; ?>)</option>
-                            <?php endforeach; ?>
-                        </select>
-                        <small>Seleccione un asesor que no tenga coordinador asignado</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="coordinador_cedula">Coordinador *</label>
-                        <select id="coordinador_cedula" name="coordinador_cedula" required>
-                            <option value="">Seleccionar coordinador</option>
-                            <?php foreach ($coordinadores as $coord): ?>
-                                <option value="<?php echo $coord['cedula']; ?>"><?php echo $coord['nombre_completo']; ?> (<?php echo $coord['usuario']; ?>)</option>
-                            <?php endforeach; ?>
-                        </select>
-                        <small>Seleccione el coordinador que supervisará al asesor</small>
-                    </div>
-                    
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('asignar-personal')">Cancelar</button>
-                        <button type="submit" id="btn-asignar-personal" class="btn btn-primary">
-                            <i class="fas fa-user-friends"></i> Asignar
-                        </button>
-                    </div>
-                </form>
-                <div id="alert-container-asignar"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Cargar Clientes -->
-    <div id="cargar-clientes" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Cargar Clientes desde Excel</h3>
-                <button class="close-btn" onclick="closeModal('cargar-clientes')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="form-cargar-clientes" onsubmit="cargarClientes(event)">
-                    <div class="form-group">
-                        <label for="archivo">Seleccionar archivo Excel/CSV</label>
-                        <input type="file" id="archivo" name="archivo" accept=".xlsx,.xls,.csv" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="coordinador_id">Asignar a Coordinador</label>
-                        <select id="coordinador_id" name="coordinador_id" required>
-                            <option value="">Seleccionar coordinador</option>
-                            <?php foreach ($coordinadores as $coord): ?>
-                                        <div class="stat-subtitle">Disponibles</div>
-                                    </div>
-                                </div>
-                            </div>
-                            
                             <div class="chart-section">
                                 <h5>Distribución por Coordinador</h5>
                                 <?php if ($asesoresAsignadosCount > 0): ?>
@@ -672,7 +389,7 @@ usort($historialAsignaciones, function ($a, $b) {
                                 <?php endif; ?>
                             </div>
                         </div>
-                        
+
                         <aside class="right-sidebar">
                             <h4>Métricas</h4>
                             <div class="metric-item">
@@ -682,7 +399,7 @@ usort($historialAsignaciones, function ($a, $b) {
                                 </div>
                                 <span class="metric-value"><?php echo $tasaAsignacion; ?>%</span>
                             </div>
-                            
+
                             <div class="metric-item">
                                 <span class="metric-label">Asignaciones activas</span>
                                 <div class="metric-bar">
@@ -697,7 +414,7 @@ usort($historialAsignaciones, function ($a, $b) {
                     <div class="tab-content" id="tab-historial">
                         <div class="left-content">
                             <h4 class="section-heading">Historial de Asignaciones</h4>
-                            
+
                             <div class="history-filters">
                                 <div class="filter-group">
                                     <label for="fecha_desde">Desde</label>
@@ -717,7 +434,7 @@ usort($historialAsignaciones, function ($a, $b) {
                                     </select>
                                 </div>
                             </div>
-                            
+
                             <div class="history-list" id="history-list">
                                 <?php if (!empty($historialAsignaciones)): ?>
                                     <?php foreach ($historialAsignaciones as $asignacion): ?>
@@ -757,7 +474,7 @@ usort($historialAsignaciones, function ($a, $b) {
                                 <?php endif; ?>
                             </div>
                         </div>
-                        
+
                         <aside class="right-sidebar">
                             <h4>Resumen de Actividad</h4>
                             <div class="activity-summary">
