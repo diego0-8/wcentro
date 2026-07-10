@@ -32,8 +32,11 @@ define('ASTERISK_WSS_PATH', '/ws');
 // Servidores STUN --stun.alphacron.de:3478 % stun.l.google.com:19302
 define('ASTERISK_STUN_SERVER', 'stun.alphacron.de:3478');
 
-// Modo Debug 
-define('ASTERISK_DEBUG_MODE', true);
+// Red local: true = sin STUN (misma LAN que el PBX); false = usar STUN para NAT/WAN
+define('ASTERISK_IS_LOCAL_NETWORK', false);
+
+// Modo debug (desactivado por seguridad; habilitar por entorno cuando sea necesario)
+define('ASTERISK_DEBUG_MODE', false);
 
 /**
  * Retorna la configuración de WebRTC como array para el Frontend
@@ -45,16 +48,24 @@ function getWebRTCConfig()
     // El puerto 8089 es el puerto seguro estándar que requiere WSS
     $wssUrl = 'wss://' . ASTERISK_WSS_SERVER . ':' . ASTERISK_WSS_PORT . ASTERISK_WSS_PATH;
 
+    $stunUrl = ASTERISK_STUN_SERVER;
+    if (!preg_match('/^(stun|turn|turns):/i', $stunUrl)) {
+        $stunUrl = 'stun:' . $stunUrl;
+    }
+
+    $isLocalNetwork = defined('ASTERISK_IS_LOCAL_NETWORK') && ASTERISK_IS_LOCAL_NETWORK;
+
     return [
         'wss_server' => $wssUrl,
         'sip_domain' => ASTERISK_SIP_DOMAIN,
         'wss_port' => ASTERISK_WSS_PORT,
         'wss_path' => ASTERISK_WSS_PATH,
-        'iceServers' => [
-            ['urls' => ASTERISK_STUN_SERVER]
+        'iceServers' => $isLocalNetwork ? [] : [
+            ['urls' => $stunUrl]
         ],
+        'is_local_network' => $isLocalNetwork,
         'debug_mode' => ASTERISK_DEBUG_MODE,
-        'trace_sip' => true
+        'trace_sip' => ASTERISK_DEBUG_MODE
     ];
 }
 ?>

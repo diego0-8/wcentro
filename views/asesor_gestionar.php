@@ -1088,9 +1088,7 @@ $fecha_min_volver_llamar = (new DateTimeImmutable('now', new DateTimeZone('Ameri
         $sip_password = trim($sip_password);
         
         // Determinar si estamos en red local (para configuración de ICE)
-        // Por defecto, si no hay servidores STUN configurados, asumimos que es LAN
-        $is_local_network = empty($webrtc_config['iceServers']) || 
-                           (is_array($webrtc_config['iceServers']) && count($webrtc_config['iceServers']) === 0);
+        $is_local_network = !empty($webrtc_config['is_local_network']);
         
         // Debug seguro: nunca registrar valores de contraseña en logs.
         if (defined('ASTERISK_DEBUG_MODE') && ASTERISK_DEBUG_MODE) {
