@@ -48,47 +48,6 @@
  * 
  * FIX: iceGatheringTimeout obliga al navegador a esperar candidatos antes de enviar el SDP con 0.0.0.0
  */
-function configureSessionDescriptionHandlerOptions(softphone, session, sdhOptions, defaultRtcConfig) {
-    const isIncomingInvite = typeof SIP !== 'undefined' &&
-        (session instanceof SIP.Invitation || session?.constructor?.name === 'Invitation');
-
-    const iceServers = sdhOptions.iceServers ||
-        sdhOptions.rtcConfiguration?.iceServers ||
-        defaultRtcConfig?.iceServers ||
-        (typeof softphone._getIceServers === 'function' ? softphone._getIceServers() : []);
-
-    const rtcConfiguration = Object.assign({}, defaultRtcConfig || {}, sdhOptions.rtcConfiguration || sdhOptions.peerConnectionConfiguration || {}, {
-        iceServers,
-        iceTransportPolicy: typeof softphone._getIceTransportPolicy === 'function'
-            ? softphone._getIceTransportPolicy(iceServers)
-            : 'all',
-        bundlePolicy: 'balanced',
-        rtcpMuxPolicy: 'negotiate'
-    });
-
-    if (!sdhOptions.peerConnectionOptions) {
-        sdhOptions.peerConnectionOptions = {};
-    }
-    const peerConnectionOptions = sdhOptions.peerConnectionOptions;
-    if (!peerConnectionOptions.rtcConfiguration) {
-        peerConnectionOptions.rtcConfiguration = rtcConfiguration;
-    }
-
-    // SIP.js aplica addDefaultIceCheckingTimeout(5000) si peerConnectionOptions está vacío.
-    // Ese timer es el "RTCIceChecking Timeout" de 5s que retrasa contestar.
-    if (isIncomingInvite) {
-        peerConnectionOptions.iceCheckingTimeout = 500;
-        sdhOptions.iceGatheringTimeout = 0;
-    } else if (peerConnectionOptions.iceCheckingTimeout === undefined || peerConnectionOptions.iceCheckingTimeout === null) {
-        peerConnectionOptions.iceCheckingTimeout = 1500;
-    }
-
-    sdhOptions.rtcConfiguration = rtcConfiguration;
-    sdhOptions.iceServers = iceServers;
-
-    return { sdhOptions, isIncomingInvite };
-}
-
 function createCustomSessionDescriptionHandlerFactory(softphone, peerConnectionConfig) {
     return function customSDHFactory(session, options) {
         const logger = session.userAgent.getLogger('sip.SessionDescriptionHandler', session.id);
