@@ -201,6 +201,7 @@ function hayCamposPerfilacionConDatos() {
 
     const idsAcuerdo = [
         'total-a-pagar-acuerdo',
+        'fecha-pago-acuerdo-total',
         'simulador-monto',
         'simulador-num-cuotas',
         'simulador-valor-cuota',
@@ -273,6 +274,7 @@ function limpiarFormularioGestion(opts) {
 
     const idsAcuerdo = [
         'total-a-pagar-acuerdo',
+        'fecha-pago-acuerdo-total',
         'simulador-monto', 'simulador-num-cuotas', 'simulador-valor-cuota',
         'acuerdo-comite-monto-propuesto', 'acuerdo-comite-estado', 'fecha-pago', 'cuota-pago',
         'cuota-actual', 'volver-llamar-fecha', 'volver-llamar-hora'
@@ -287,8 +289,9 @@ function limpiarFormularioGestion(opts) {
     const subCheck = document.getElementById('acuerdo-todas-obligaciones-checkboxes');
     if (subCheck) subCheck.innerHTML = '';
 
-    const wrapAcuerdo = document.getElementById('acuerdo-formulario-unico-wrap');
-    if (wrapAcuerdo) wrapAcuerdo.innerHTML = '';
+    const wrapMultiAcuerdo = document.getElementById('acuerdos-multi-obligacion');
+    if (wrapMultiAcuerdo) wrapMultiAcuerdo.innerHTML = '';
+    hide('acuerdos-multi-obligacion-wrap');
 
     if (typeof actualizarCamposVolverLlamarProgramacion === 'function') {
         actualizarCamposVolverLlamarProgramacion('');
@@ -737,6 +740,7 @@ function attachListenersPagoTotalCard(card) {
 function buildHtmlTarjetaPagoTotal(ob, fechaMin) {
     const id = ob.id_obligacion;
     const op = escapeHtmlAcuerdo(ob.operacion);
+    const minAttr = fechaMin ? ' min="' + fechaMin + '"' : '';
     return `
 <div class="acuerdo-tarjeta-obligacion" data-obligacion-id="${id}" data-operacion="${op}" style="border: 1px solid #dee2e6; border-radius: 8px; padding: 12px; background: #fafbfc;">
     <div style="font-weight: 700; margin-bottom: 10px; color: #1a5276;"><i class="fas fa-file-invoice-dollar"></i> Obligación ${op}</div>
@@ -747,6 +751,10 @@ function buildHtmlTarjetaPagoTotal(ob, fechaMin) {
                 <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #28a745; font-weight: 700;">$</span>
                 <input type="text" class="js-total-a-pagar-acuerdo" placeholder="0" style="width: 100%; padding: 8px 8px 8px 30px; border: 2px solid #28a745; border-radius: 4px; font-weight: 600; color: #28a745;" inputmode="numeric">
             </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="min-width: 140px; margin: 0;">Fecha de pago:</label>
+            <input type="date" class="js-fecha-pago-acuerdo-total" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"${minAttr}>
         </div>
     </div>
 </div>`;
@@ -985,13 +993,18 @@ function validarTarjetaAcuerdoMulti(obligacionId, operacion, nivel2) {
     }
     if (nivel2 === 'acuerdo_pago_total') {
         const totalRaw = card.querySelector('.js-total-a-pagar-acuerdo');
+        const fechaRaw = card.querySelector('.js-fecha-pago-acuerdo-total');
         const tot = totalRaw ? String(totalRaw.value || '').trim() : '';
+        const fecha = fechaRaw ? String(fechaRaw.value || '').trim() : '';
         if (!tot) {
             return { ok: false, message: pref + 'diligencie total a pagar.' };
         }
         const totalNum = parsePesosColombia(tot);
         if (!totalNum || totalNum <= 0) {
             return { ok: false, message: pref + 'total a pagar debe ser mayor a cero.' };
+        }
+        if (!fecha) {
+            return { ok: false, message: pref + 'diligencie la fecha de pago.' };
         }
         return { ok: true };
     }
@@ -1058,15 +1071,17 @@ function construirDatosAcuerdoMultiParaPayload(obligacionId, nivel2) {
     if (!card) return {};
     if (nivel2 === 'acuerdo_pago_total') {
         const totalInput = card.querySelector('.js-total-a-pagar-acuerdo');
+        const fechaInput = card.querySelector('.js-fecha-pago-acuerdo-total');
         const totalAPagarAcuerdo = totalInput ? parsePesosColombia(totalInput.value) : null;
+        const fechaPagoTotal = fechaInput && fechaInput.value ? fechaInput.value : null;
         return {
-            fecha_pago: null,
+            fecha_pago: fechaPagoTotal,
             cuota: totalAPagarAcuerdo,
             saldo_a_pagar: null,
             descuento_monto: null,
             descuento_porcentaje: null,
             total_a_pagar_acuerdo: totalAPagarAcuerdo,
-            fecha_limite_acuerdo: null,
+            fecha_limite_acuerdo: fechaPagoTotal,
             simulador_monto: null,
             simulador_numero_cuotas: null,
             simulador_valor_cuota: null,
@@ -1717,6 +1732,7 @@ function mostrarHistorial(gestiones) {
                     bloque += '<p style="margin: 0 0 8px; font-weight: 600; color: #007bff;"><i class="fas fa-file-contract"></i> Datos del acuerdo</p>';
                     if (a.tipo_acuerdo === 'total') {
                         if (a.valor_final_pago_total != null) bloque += '<p style="margin: 4px 0;"><strong>Total a pagar:</strong> $' + parseFloat(a.valor_final_pago_total).toLocaleString('es-CO') + '</p>';
+                        if (a.fecha_limite_pago) bloque += '<p style="margin: 4px 0;"><strong>Fecha de pago:</strong> ' + formatearFechaSoloFecha(a.fecha_limite_pago) + '</p>';
                     } else if (a.tipo_acuerdo === 'cuotas') {
                         if (a.valor_original != null) bloque += '<p style="margin: 4px 0;"><strong>Monto a financiar:</strong> $' + parseFloat(a.valor_original).toLocaleString('es-CO') + '</p>';
                         if (a.numero_cuotas != null) bloque += '<p style="margin: 4px 0;"><strong>Número de cuotas:</strong> ' + a.numero_cuotas + '</p>';
@@ -2080,10 +2096,15 @@ function guardarGestion() {
         // Si es ACUERDO PAGO TOTAL, usar los campos específicos
         else if (nivel2 === 'acuerdo_pago_total') {
             const totalInput = document.getElementById('total-a-pagar-acuerdo');
+            const fechaTotalInput = document.getElementById('fecha-pago-acuerdo-total');
 
             if (totalInput && totalInput.value) {
                 const v = parsePesosColombia(totalInput.value);
                 totalAPagarAcuerdo = v > 0 ? v : null;
+            }
+            if (fechaTotalInput && fechaTotalInput.value) {
+                fechaPago = fechaTotalInput.value;
+                fechaLimiteAcuerdo = fechaTotalInput.value;
             }
             cuota = totalAPagarAcuerdo;
         } else if (nivel2 === 'acuerdo_largo_plazo') {
@@ -2197,7 +2218,9 @@ function guardarGestion() {
 
     if (!acuerdoDesdeTarjetasMulti && !salteaFormularioAcuerdoUnicoPorTodasMulti && esAcuerdoPago && nivel2 === 'acuerdo_pago_total') {
         const totalInput = document.getElementById('total-a-pagar-acuerdo');
+        const fechaTotalInput = document.getElementById('fecha-pago-acuerdo-total');
         const totalRaw = totalInput ? String(totalInput.value || '').trim() : '';
+        const fechaRaw = fechaTotalInput ? String(fechaTotalInput.value || '').trim() : '';
         if (!totalRaw) {
             alert('Para ACUERDO PAGO TOTAL debe diligenciar total a pagar.');
             return;
@@ -2205,6 +2228,10 @@ function guardarGestion() {
         const totalNum = parsePesosColombia(totalRaw);
         if (!totalNum || totalNum <= 0) {
             alert('Total a pagar debe ser mayor a cero.');
+            return;
+        }
+        if (!fechaRaw) {
+            alert('Para ACUERDO PAGO TOTAL debe diligenciar la fecha de pago.');
             return;
         }
     }
@@ -2421,7 +2448,12 @@ function guardarGestionMultiplesFacturas(facturasIds, canalContacto, nivel1Label
     if (esAcuerdoPagoNivel1Valor(nivel1Val) && !acuerdoPorTarjetas) {
         if (nivel2 === 'acuerdo_pago_total') {
             const totalInput = document.getElementById('total-a-pagar-acuerdo');
+            const fechaTotalInput = document.getElementById('fecha-pago-acuerdo-total');
             if (totalInput && totalInput.value) totalAPagarAcuerdo = parsePesosColombia(totalInput.value) || null;
+            if (fechaTotalInput && fechaTotalInput.value) {
+                fechaPago = fechaTotalInput.value;
+                fechaLimiteAcuerdo = fechaTotalInput.value;
+            }
             cuota = totalAPagarAcuerdo;
         } else if (nivel2 === 'acuerdo_aprobado') {
             const montoInput = document.getElementById('acuerdo-comite-monto-propuesto');
@@ -2621,13 +2653,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Configurar fecha mínima a hoy (solo fechas futuras)
     const fechaPagoInput = document.getElementById('fecha-pago');
+    const fechaPagoTotalInput = document.getElementById('fecha-pago-acuerdo-total');
+    const fechaMinima = fechaMinimaHoyAcuerdo();
     if (fechaPagoInput) {
-        const hoy = new Date();
-        const fechaMinima = hoy.toISOString().split('T')[0];
         fechaPagoInput.setAttribute('min', fechaMinima);
     }
+    if (fechaPagoTotalInput) {
+        fechaPagoTotalInput.setAttribute('min', fechaMinima);
+    }
     
-    // Formato de pesos para acuerdo pago total (solo total a pagar)
+    // Formato de pesos para acuerdo pago total (total a pagar)
     attachFormatoPesoAcuerdo(document.getElementById('total-a-pagar-acuerdo'));
     
     // ========== Cuotas manuales (Acuerdo a largo plazo) ==========

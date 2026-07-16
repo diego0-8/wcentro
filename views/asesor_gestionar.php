@@ -190,8 +190,12 @@ $fecha_min_volver_llamar = (new DateTimeImmutable('now', new DateTimeZone('Ameri
                                         <input type="text" id="total-a-pagar-acuerdo" placeholder="0" style="width: 100%; padding: 8px 8px 8px 30px; border: 2px solid #28a745; border-radius: 4px; font-weight: 600; color: #28a745;" inputmode="numeric">
                                     </div>
                                 </div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="min-width: 140px; margin: 0;">Fecha de pago:</label>
+                                    <input type="date" id="fecha-pago-acuerdo-total" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" min="<?php echo htmlspecialchars($fecha_min_volver_llamar, ENT_QUOTES, 'UTF-8'); ?>">
+                                </div>
                             </div>
-                            <p class="texto-ayuda-acuerdo-total" style="margin: 8px 0 0; font-size: 12px; color: #666;">Indique el monto total acordado con el cliente.</p>
+                            <p class="texto-ayuda-acuerdo-total" style="margin: 8px 0 0; font-size: 12px; color: #666;">Indique el monto total acordado y la fecha de pago comprometida.</p>
                         </div>
                         
                         <!-- Cuotas manuales para ACUERDO A LARGO PLAZO -->

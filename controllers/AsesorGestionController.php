@@ -309,11 +309,18 @@ class AsesorGestionController {
             if ($total === null || $total <= 0) {
                 return ['success' => false, 'message' => 'Acuerdo pago total: total a pagar es obligatorio y debe ser mayor a cero.'];
             }
+            // Fecha de pago: frontend envía fecha_limite_acuerdo y/o fecha_pago
+            $fechaLimite = $this->normalizarFechaIso(
+                $datosGestion['fecha_limite_acuerdo'] ?? ($datosGestion['fecha_pago'] ?? null)
+            );
+            if ($fechaLimite === null) {
+                return ['success' => false, 'message' => 'Acuerdo pago total: la fecha de pago es obligatoria.'];
+            }
             $datosAcuerdo = [
                 'valor_original' => $total,
                 'descuento_aplicado' => null,
                 'valor_final_pago_total' => $total,
-                'fecha_limite_pago' => null,
+                'fecha_limite_pago' => $fechaLimite,
             ];
         } elseif ($nivel2 === 'acuerdo_largo_plazo') {
             $tipoAcuerdo = 'cuotas';
@@ -759,7 +766,9 @@ class AsesorGestionController {
                 'sms' => isset($datosGestion['canales']['sms']) && $datosGestion['canales']['sms'],
                 'correo_fisico' => isset($datosGestion['canales']['correo']) && $datosGestion['canales']['correo'],
                 'whatsapp' => isset($datosGestion['canales']['whatsapp']) && $datosGestion['canales']['whatsapp'],
-                'fecha_pago' => $detalleCuotasLargoPlazo ? $detalleCuotasLargoPlazo['fecha_primera_cuota'] : ($datosGestion['fecha_pago'] ?? null),
+                'fecha_pago' => $detalleCuotasLargoPlazo
+                    ? $detalleCuotasLargoPlazo['fecha_primera_cuota']
+                    : $this->normalizarFechaIso($datosGestion['fecha_pago'] ?? ($datosGestion['fecha_limite_acuerdo'] ?? null)),
                 'volver_llamar_programado' => $volverProgRes['datetime'],
                 'valor_pago' => $datosGestion['valor_pago'] ?? null,
                 'cuota' => $detalleCuotasLargoPlazo ? $detalleCuotasLargoPlazo['valor_cuota_referencia'] : (isset($datosGestion['cuota']) && $datosGestion['cuota'] !== '' ? (float) preg_replace('/[^\d.]/', '', $datosGestion['cuota']) : null),
@@ -903,7 +912,9 @@ class AsesorGestionController {
                 'sms' => isset($datosGestion['canales']['sms']) && $datosGestion['canales']['sms'],
                 'correo_fisico' => isset($datosGestion['canales']['correo']) && $datosGestion['canales']['correo'],
                 'whatsapp' => isset($datosGestion['canales']['whatsapp']) && $datosGestion['canales']['whatsapp'],
-                'fecha_pago' => $detalleCuotasLargoPlazo ? $detalleCuotasLargoPlazo['fecha_primera_cuota'] : ($datosGestion['fecha_pago'] ?? null),
+                'fecha_pago' => $detalleCuotasLargoPlazo
+                    ? $detalleCuotasLargoPlazo['fecha_primera_cuota']
+                    : $this->normalizarFechaIso($datosGestion['fecha_pago'] ?? ($datosGestion['fecha_limite_acuerdo'] ?? null)),
                 'volver_llamar_programado' => $volverProgRes['datetime'],
                 'valor_pago' => $datosGestion['valor_pago'] ?? null,
                 'cuota' => $detalleCuotasLargoPlazo ? $detalleCuotasLargoPlazo['valor_cuota_referencia'] : (isset($datosGestion['cuota']) && $datosGestion['cuota'] !== '' ? (float) preg_replace('/[^\d.]/', '', (string) $datosGestion['cuota']) : null),
